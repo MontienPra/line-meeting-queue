@@ -14,7 +14,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <link rel="stylesheet" href="css/styles.css?v=2.2">
+  <link rel="stylesheet" href="css/styles.css?v=2.6">
 </head>
 <body class="min-h-screen pb-16">
 
@@ -40,22 +40,34 @@
             <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
           </button>
 
-          <!-- Dropdown Menu for Testing & LIFF Config -->
+          <!-- Dropdown Menu: Profile Card & Dev Switcher -->
           <div id="userDropdown" class="hidden absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
-            <div class="px-3 py-2 border-b border-slate-100">
-              <div class="flex items-center justify-between">
-                <p class="text-xs text-slate-400 font-medium uppercase tracking-wider">โหมดจำลองผู้ใช้ (Dev Switcher)</p>
-                <span id="userLiveBadge" class="hidden text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded-full font-bold">🟢 LINE Live</span>
+            <!-- Profile Info Card (Always shown) -->
+            <div class="px-3.5 py-3 border-b border-slate-100 bg-slate-50/80 rounded-t-2xl">
+              <div class="flex items-center space-x-3">
+                <img id="dropdownUserAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Somchai" alt="Profile" class="w-10 h-10 rounded-full bg-slate-200 border border-white shadow-xs object-cover">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center space-x-1.5">
+                    <p id="dropdownUserName" class="text-xs font-bold text-slate-800 truncate">สมชาย</p>
+                    <span id="userRoleBadge" class="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-blue-100 text-blue-700 shrink-0">พนักงาน</span>
+                  </div>
+                  <p id="dropdownUserStatusText" class="text-[10px] text-slate-500 mt-0.5 truncate">บัญชีผู้ใช้งานระบบ</p>
+                </div>
               </div>
-              <p class="text-xs text-slate-600 mt-0.5">ใช้สลับเพื่อทดสอบสิทธิ์การจอง & การจัดการ</p>
-              <div id="userLineIdSection" class="hidden mt-1.5 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] flex items-center justify-between">
-                <span class="text-slate-600 truncate mr-1 font-mono" id="userLineIdDisplay">LINE ID: -</span>
-                <button onclick="app.copyMyLineId()" class="text-indigo-600 hover:text-indigo-800 font-bold shrink-0 bg-white px-1.5 py-0.5 border border-indigo-200 rounded">คัดลอก</button>
+
+              <!-- LINE ID Section with copy button -->
+              <div id="userLineIdSection" class="mt-2.5 p-2 bg-white border border-slate-200 rounded-xl text-[11px] flex items-center justify-between shadow-xs">
+                <div class="truncate mr-2">
+                  <span class="text-[9px] text-slate-400 block font-semibold uppercase">My LINE ID</span>
+                  <span class="text-slate-700 truncate font-mono text-[10px]" id="userLineIdDisplay">LINE ID: -</span>
+                </div>
+                <button onclick="app.copyMyLineId()" class="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 font-bold shrink-0 px-2 py-1 border border-indigo-200 rounded-lg text-[10px] transition">คัดลอก</button>
               </div>
             </div>
             
+            <!-- Dev Test Accounts (Hidden in LINE Live Mode) -->
             <div id="devTestAccountsSection" class="py-1">
-              <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">บัญชีทดสอบระบบ (Dev Simulator)</div>
+              <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">โหมดจำลองผู้ใช้ (Dev Switcher)</div>
               <button onclick="app.switchUser('employee1')" class="w-full text-left px-3 py-1.5 text-xs flex items-center space-x-2.5 hover:bg-slate-50 transition text-slate-700">
                 <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
                 <span>พนักงาน: สมชาย ใจดี (ฝ่าย IT)</span>
@@ -66,10 +78,10 @@
               </button>
             </div>
 
-            <!-- รายชื่อหัวหน้าทีม (ซิงค์อัตโนมัติตามฐานข้อมูล) -->
-            <div class="border-t border-slate-100 py-1">
+            <!-- รายชื่อหัวหน้าทีม (ซิงค์อัตโนมัติ - Hidden in LINE Live Mode) -->
+            <div id="userDropdownLeadersSection" class="border-t border-slate-100 py-1">
               <div class="px-3 py-1 text-[10px] font-bold text-teal-700 uppercase tracking-wider flex items-center justify-between">
-                <span>หัวหน้าทีม (Team Leaders)</span>
+                <span>สลับทดสอบหัวหน้าทีม (Dev Test)</span>
                 <span id="userDropdownLeadersCount" class="text-[9px] bg-teal-50 text-teal-600 px-1.5 py-0.2 rounded-full font-medium">0 ท่าน</span>
               </div>
               <div id="userDropdownLeaders" class="space-y-0.5 max-h-48 overflow-y-auto">
@@ -77,15 +89,16 @@
               </div>
             </div>
 
-            <!-- เจ้าของคิว (Host) -->
-            <div class="border-t border-slate-100 pt-1">
+            <!-- เจ้าของคิว (Host - Hidden in LINE Live Mode) -->
+            <div id="userDropdownHostSection" class="border-t border-slate-100 pt-1">
               <button id="userDropdownHostBtn" onclick="app.switchUser('host')" class="w-full text-left px-3 py-2 text-xs flex items-center space-x-2.5 hover:bg-amber-50 text-amber-900 transition font-medium">
                 <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                <span id="userDropdownHostName" class="truncate">👑 เจ้าของคิว (Host / คุณมณเทียร)</span>
+                <span id="userDropdownHostName" class="truncate">👑 สลับเป็นเจ้าของคิว (Host)</span>
               </button>
             </div>
 
-            <div class="border-t border-slate-100 pt-1 mt-1">
+            <!-- LIFF Config (Hidden in LINE Live Mode) -->
+            <div id="userDropdownLiffConfigSection" class="border-t border-slate-100 pt-1 mt-1">
               <button onclick="app.openLiffConfigModal()" class="w-full text-left px-3 py-2 text-xs flex items-center space-x-2.5 text-emerald-600 hover:bg-emerald-50 transition">
                 <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
                 <span>ตั้งค่า LINE LIFF ID (Live Mode)</span>
@@ -108,8 +121,8 @@
         <span id="myBookingsBadge" class="hidden ml-1 px-1.5 py-0.2 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">0</span>
       </button>
       <button id="tabHostBtn" onclick="app.switchTab('host')" class="flex-1 py-2.5 text-center text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center space-x-1.5">
-        <i data-lucide="shield-check" class="w-4 h-4"></i>
-        <span id="tabHostBtnText">จัดการคิว (Host)</span>
+        <i data-lucide="users" class="w-4 h-4"></i>
+        <span id="tabHostBtnText">คิวทั้งหมด</span>
       </button>
     </div>
   </header>
@@ -1166,7 +1179,7 @@
   <div id="toastContainer" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 pointer-events-none space-y-2"></div>
 
   <!-- App Script -->
-  <script src="js/app.js?v=2.2"></script>
+  <script src="js/app.js?v=2.6"></script>
   <script>
     // Initialize icons
     lucide.createIcons();

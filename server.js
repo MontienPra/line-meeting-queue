@@ -565,7 +565,8 @@ app.get('/api/calendar/day', (req, res) => {
           employeeName: bookingMatch.employeeName,
           employeePicture: bookingMatch.employeePicture,
           meetingType: bookingMatch.meetingType,
-          notes: (isMine || isHost) ? bookingMatch.notes : 'รายละเอียดการประชุม',
+          branchName: bookingMatch.branchName || 'สำนักงานใหญ่',
+          notes: (isMine || isHost) ? bookingMatch.notes : (bookingMatch.notes || 'นัดหมายการประชุม'),
           isMine,
           canCancel: (isMine || isHost) // STRICT PERMISSION: only owner or host
         }
@@ -775,13 +776,9 @@ app.get('/api/my-bookings', (req, res) => {
   res.json({ bookings: myBookings });
 });
 
-// 6. Get All Bookings (For Host & Team Leaders)
+// 6. Get All Bookings (Visible to Host, Team Leaders, and Employees)
 app.get('/api/host/bookings', (req, res) => {
   const db = readDB();
-  if (!isHostOrLeaderUser(req, db)) {
-    return res.status(403).json({ error: 'เฉพาะ Host หรือ หัวหน้าทีม เท่านั้นที่สามารถดูรายชื่อคิวทั้งหมดได้' });
-  }
-
   const activeBookings = (db.bookings || [])
     .filter(b => b.status !== 'cancelled')
     .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));

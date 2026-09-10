@@ -63,7 +63,11 @@ class MeetingQueueApp {
   async init() {
     this.setupDropdown();
     this.updateUserUI();
-    this.setupLiff();
+    try {
+      await this.setupLiff();
+    } catch (e) {
+      console.warn('setupLiff caught in init:', e);
+    }
     await this.loadMonthCalendar();
     this.loadMyBookings();
     this.loadHostBookings();
@@ -331,11 +335,23 @@ class MeetingQueueApp {
         hostPanelDesc.innerHTML = '👁️ <strong>มุมมองหัวหน้าทีม:</strong> ตรวจสอบรายชื่อพนักงานที่ลงคิวทั้งหมดได้ (ดูอย่างเดียว ไม่สามารถแก้ไขหรือยกเลิกคิวได้)';
       }
     } else {
-      if (hostTabBtn) hostTabBtn.classList.add('opacity-50');
-      if (tabHostBtnText) tabHostBtnText.textContent = 'จัดการคิว (Host)';
-      if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.remove('hidden');
-      if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.remove('hidden');
-      if (hostAdminActionBtns) hostAdminActionBtns.classList.remove('hidden');
+      if (hostTabBtn) hostTabBtn.classList.remove('opacity-50');
+      if (tabHostBtnText) tabHostBtnText.textContent = 'คิวทั้งหมด';
+      if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.add('hidden');
+      if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.add('hidden');
+      if (hostAdminActionBtns) hostAdminActionBtns.classList.add('hidden');
+      if (hostHeaderBanner) {
+        hostHeaderBanner.className = 'bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 rounded-2xl p-4 text-white shadow-md';
+      }
+      if (hostRoleBadge) {
+        hostRoleBadge.textContent = '👥 รายชื่อคิวประชุมทั้งหมด';
+        hostRoleBadge.className = 'inline-block px-2.5 py-0.5 bg-white/20 rounded-full text-[11px] font-bold uppercase tracking-wider mb-1 text-indigo-100';
+      }
+      if (hostPanelTitle) hostPanelTitle.textContent = 'รายชื่อคิวการประชุมทั้งหมดในระบบ';
+      if (hostPanelDesc) {
+        hostPanelDesc.className = 'text-xs text-indigo-100 mt-1';
+        hostPanelDesc.innerHTML = '👁️ <strong>มุมมองเพื่อนร่วมงาน:</strong> สามารถตรวจสอบคิวและช่วงเวลาที่เพื่อนร่วมงานนัดหมายไว้ได้';
+      }
     }
 
     const isLive = Boolean(this.currentUser.isLiffUser || (typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn()));
@@ -383,11 +399,6 @@ class MeetingQueueApp {
   }
 
   switchTab(tabName) {
-    if (tabName === 'host' && this.currentUser.role !== 'host' && this.currentUser.role !== 'team_leader') {
-      this.showToast('info', '🔒 เมนูนี้สำหรับ Host และหัวหน้าทีมเท่านั้น');
-      return;
-    }
-
     const tabs = ['calendar', 'my-bookings', 'host'];
     tabs.forEach(t => {
       const section = document.getElementById(t === 'calendar' ? 'tabCalendar' : t === 'my-bookings' ? 'tabMyBookings' : 'tabHost');
@@ -439,31 +450,39 @@ class MeetingQueueApp {
 
   async loadMonthCalendar() {
     const grid = document.getElementById('calendarGrid');
+    if (!grid) return;
     grid.innerHTML = '<div class="col-span-7 py-12 text-center text-slate-400 text-sm">กำลังโหลดข้อมูลปฏิทิน...</div>';
 
     // Update Title (Thai Buddhist Era = Year + 543)
     const titleEl = document.getElementById('calendarMonthTitle');
-    titleEl.textContent = `${THAI_MONTHS[this.viewMonth - 1]} ${this.viewYear + 543}`;
+    if (titleEl) {
+      titleEl.textContent = `${THAI_MONTHS[this.viewMonth - 1]} ${this.viewYear + 543}`;
+    }
 
     try {
-      const res = await fetch(`/api/calendar/month?year=${this.viewYear}&month=${this.viewMonth}&userId=${encodeURIComponent(this.currentUser.id)}`);
+      const currentUserId = (this.currentUser && this.currentUser.id) ? this.currentUser.id : '';
+      const res = await fetch(`/api/calendar/month?year=${this.viewYear}&month=${this.viewMonth}&userId=${encodeURIComponent(currentUserId)}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       this.monthData = data;
       this.branches = data.branches || [];
       this.eventTypes = data.eventTypes || [];
 
-      if (data.hostName) {
-        document.getElementById('hostNameHeader').textContent = `คิวของ: ${data.hostName}`;
+      const hostHeader = document.getElementById('hostNameHeader');
+      if (hostHeader && data.hostName) {
+        hostHeader.textContent = `คิวของ: ${data.hostName}`;
       }
 
       this.renderTeamLegend(data);
       this.populateBranchDropdown();
       this.populateEventTypeDropdown();
       this.renderUserDropdown(data.teamLeaders, data.hostName);
-      this.renderCalendarGrid(data.days);
+      this.renderCalendarGrid(data.days || []);
     } catch (err) {
-      console.error(err);
-      grid.innerHTML = '<div class="col-span-7 py-12 text-center text-rose-500 text-sm">เกิดข้อผิดพลาดในการโหลดปฏิทิน</div>';
+      console.error('loadMonthCalendar error:', err);
+      grid.innerHTML = '<div class="col-span-7 py-12 text-center text-rose-500 text-sm">เกิดข้อผิดพลาดในการโหลดปฏิทิน กรุณารีเฟรชอีกครั้ง</div>';
     }
   }
 
@@ -1451,42 +1470,51 @@ class MeetingQueueApp {
         const isMine = b.isMine;
 
         if (isMine) {
-          slotCard.classList.add('bg-amber-50/70', 'border-amber-300');
+          slotCard.classList.add('bg-amber-50/80', 'border-amber-300');
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
               <div>
-                <div class="flex items-center space-x-1.5">
+                <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
                   <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
                 </div>
-                <div class="text-xs font-semibold text-slate-700 mt-0.5">📌 ${b.eventTitle} (${b.eventType})</div>
+                <div class="text-xs font-bold text-slate-700 mt-0.5">📌 ${b.eventTitle || 'หัวข้อการประชุม'} <span class="font-normal text-slate-500">(${b.eventType || 'ทั่วไป'})</span></div>
+                ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-500 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center">
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center shrink-0">
               ยกเลิกคิวนี้
             </button>
           `;
         } else {
-          // Booked by other employee (STRICT ACCESS CONTROL: Other employees cannot cancel or edit!)
-          slotCard.classList.add('bg-slate-50', 'border-slate-200');
+          // Booked by other colleague / employee
+          slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
-              <img src="${b.employeePicture}" class="w-7 h-7 rounded-full bg-slate-200 border border-white">
+              <img src="${b.employeePicture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(b.employeeName || 'User')}" class="w-8 h-8 rounded-full bg-slate-200 border-2 border-white shadow-xs shrink-0 object-cover">
               <div>
-                <div class="flex items-center space-x-1.5">
-                  <span class="font-bold text-xs sm:text-sm text-slate-500">${slot.label}</span>
-                  <span class="text-[10px] font-semibold text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded-md">จองแล้ว</span>
+                <div class="flex items-center space-x-1.5 flex-wrap">
+                  <span class="font-bold text-xs sm:text-sm text-slate-700">${slot.label}</span>
+                  <span class="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded-md">👥 คิวเพื่อนร่วมงาน</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
                 </div>
-                <div class="text-xs text-slate-600 font-medium">${b.employeeName}</div>
+                <div class="text-xs font-bold text-slate-800 mt-0.5">
+                  <span>${b.employeeName}</span>
+                  <span class="font-medium text-slate-600 ml-1.5">📌 ${b.eventTitle || 'นัดหมาย'} <span class="text-[11px] text-slate-500 font-normal">(${b.eventType || 'ทั่วไป'})</span></span>
+                </div>
+                ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-500 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
             ${isHost ? `
-              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center">
+              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
                 ยกเลิก (Host)
               </button>
             ` : `
-              <span class="text-[11px] text-slate-400 italic self-end sm:self-center">🔒 คิวของผู้อื่น</span>
+              <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+                จองแล้ว
+              </span>
             `}
           `;
         }
@@ -1979,29 +2007,36 @@ class MeetingQueueApp {
         const d = new Date(b.date + 'T00:00:00');
         const thaiDateStr = `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
 
+        const isMine = this.currentUser && b.employeeUserId === this.currentUser.id;
+
         item.innerHTML = `
           <div class="flex items-start space-x-3">
-            <img src="${b.employeePicture}" class="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-xs shrink-0">
+            <img src="${b.employeePicture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(b.employeeName || 'User')}" class="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-xs shrink-0 object-cover">
             <div>
-              <div class="flex items-center space-x-2">
+              <div class="flex items-center space-x-2 flex-wrap">
                 <span class="text-xs font-bold text-slate-800">${b.employeeName}</span>
-                <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + b.branchName}</span>
+                ${isMine ? '<span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>' : '<span class="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded-md">👥 เพื่อนร่วมงาน</span>'}
+                <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
               </div>
-              <h4 class="font-bold text-slate-800 text-xs sm:text-sm mt-0.5">📌 ${b.eventTitle}</h4>
+              <h4 class="font-bold text-slate-800 text-xs sm:text-sm mt-0.5">📌 ${b.eventTitle || 'นัดหมาย'}</h4>
               <div class="flex items-center space-x-2 text-xs text-slate-500 mt-0.5">
                 <span class="font-medium text-emerald-700">📅 ${thaiDateStr} (${b.startTime} - ${b.endTime} น.)</span>
                 <span>•</span>
-                <span>${b.eventType}</span>
+                <span>${b.eventType || 'ทั่วไป'}</span>
               </div>
-              ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
+              ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
             </div>
           </div>
           ${isHost ? `
-            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center shrink-0">
+              ยกเลิก (Host)
+            </button>
+          ` : isMine ? `
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center shrink-0">
               ยกเลิกคิวนี้
             </button>
           ` : `
-            <span class="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-xl text-[11px] font-medium self-end sm:self-center">
+            <span class="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-xl text-[11px] font-medium self-end sm:self-center shrink-0">
               👁️ ดูอย่างเดียว
             </span>
           `}
