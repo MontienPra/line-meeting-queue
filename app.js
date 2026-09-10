@@ -61,16 +61,38 @@ class MeetingQueueApp {
   }
 
   async init() {
-    this.setupDropdown();
-    this.updateUserUI();
+    try {
+      this.setupDropdown();
+    } catch (e) {
+      console.warn('setupDropdown error:', e);
+    }
+
+    try {
+      this.updateUserUI();
+    } catch (e) {
+      console.warn('updateUserUI error:', e);
+    }
 
     // 1. Load Calendar, My Bookings, and All Bookings immediately!
-    // (Never block UI on external network calls)
-    this.loadMonthCalendar();
-    this.loadMyBookings();
-    this.loadHostBookings();
+    try {
+      this.loadMonthCalendar();
+    } catch (e) {
+      console.warn('loadMonthCalendar error:', e);
+    }
 
-    // 2. Initialize LINE LIFF in the background with a 3-second safety timeout
+    try {
+      this.loadMyBookings();
+    } catch (e) {
+      console.warn('loadMyBookings error:', e);
+    }
+
+    try {
+      this.loadHostBookings();
+    } catch (e) {
+      console.warn('loadHostBookings error:', e);
+    }
+
+    // 2. Initialize LINE LIFF in background
     this.setupLiff().catch(e => console.warn('setupLiff background catch:', e));
   }
 
@@ -371,7 +393,14 @@ class MeetingQueueApp {
       }
     }
 
-    const isLive = Boolean(this.currentUser.isLiffUser || (typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn()));
+    let isLive = Boolean(this.currentUser && this.currentUser.isLiffUser);
+    try {
+      if (!isLive && typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn()) {
+        isLive = true;
+      }
+    } catch (e) {
+      isLive = false;
+    }
     const devSection = document.getElementById('devTestAccountsSection');
     const leadersSection = document.getElementById('userDropdownLeadersSection');
     const hostSection = document.getElementById('userDropdownHostSection');
@@ -393,7 +422,7 @@ class MeetingQueueApp {
 
     const lineIdSection = document.getElementById('userLineIdSection');
     const lineIdDisplay = document.getElementById('userLineIdDisplay');
-    if (this.currentUser?.id) {
+    if (this.currentUser && this.currentUser.id) {
       if (lineIdSection) lineIdSection.classList.remove('hidden');
       if (lineIdDisplay) lineIdDisplay.textContent = this.currentUser.id;
     }
@@ -2846,8 +2875,8 @@ class MeetingQueueApp {
   // LINE LIFF Messaging Helper
   // -------------------------------------------------------------
   async sendLineNotification(text) {
-    if (typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn() && liff.isInClient && liff.isInClient()) {
-      try {
+    try {
+      if (typeof liff !== 'undefined' && typeof liff.isInClient === 'function' && liff.isInClient() && liff.isLoggedIn && liff.isLoggedIn()) {
         await liff.sendMessages([
           {
             type: 'text',
@@ -2855,10 +2884,9 @@ class MeetingQueueApp {
           }
         ]);
         return true;
-      } catch (msgErr) {
-        console.log('LIFF message send skipped/failed:', msgErr);
-        return false;
       }
+    } catch (msgErr) {
+      console.log('LIFF message send skipped:', msgErr.message);
     }
     return false;
   }
