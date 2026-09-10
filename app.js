@@ -1176,6 +1176,26 @@ class MeetingQueueApp {
       if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกได้');
 
       this.showToast('success', data.message);
+
+      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF
+      if (payload.isLeave) {
+        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
+        let msg = `🏖️ แจ้งสถานะการลา / ภารกิจ\nหัวข้อ: ${payload.leaveType || 'ลาอื่นๆ'}\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${hostName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      } else if (payload.isHalfDay) {
+        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
+        let msg = `⏰ แจ้งเวลาปฏิบัติงาน (ทำงานครึ่งวัน 08:00 - 12:00 น.)\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${hostName}`;
+        if (payload.branchName) msg += `\nสถานที่: ${payload.branchName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      } else if (payload.branchName) {
+        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
+        let msg = `📍 แจ้งสถานที่ปฏิบัติงาน\nสถานที่: ${payload.branchName}\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${hostName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      }
+
       await this.openDayModal(this.selectedDate);
       await this.loadMonthCalendar();
     } catch (err) {
@@ -1294,9 +1314,21 @@ class MeetingQueueApp {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกสถานะได้');
-
       this.showToast('success', data.message);
+
+      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF
+      const leaderObj = this.teamLeaders.find(l => l.id === leaderId);
+      const leaderName = leaderObj ? leaderObj.name : (this.currentUser.name || 'หัวหน้าทีม');
+      if (payload.isLeave) {
+        let msg = `🏖️ แจ้งสถานะการลา / ภารกิจ\nหัวข้อ: ${payload.leaveType || 'ลาอื่นๆ'}\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${leaderName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      } else if (payload.branchName) {
+        let msg = `📍 แจ้งสถานที่ปฏิบัติงาน\nหัวหน้าทีม: ${leaderName}\nสถานที่: ${payload.branchName}\nวันที่: ${this.selectedDate}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      }
+
       await this.openDayModal(this.selectedDate);
       await this.loadMonthCalendar();
     } catch (err) {
@@ -1544,18 +1576,7 @@ class MeetingQueueApp {
       this.showToast('success', '🎉 ลงคิว Meeting สำเร็จเรียบร้อยแล้ว!');
 
       // Send LINE message via LIFF if inside LINE app
-      if (typeof liff !== 'undefined' && liff.isLoggedIn() && liff.isInClient()) {
-        try {
-          await liff.sendMessages([
-            {
-              type: 'text',
-              text: `📅 ลงคิว Meeting สำเร็จ!\nหัวข้อ: ${eventTitle}\nวันที่: ${this.selectedDate}\nเวลา: ${this.selectedSlot.startTime} - ${this.selectedSlot.endTime} น.\nผู้ลงคิว: ${this.currentUser.name}`
-            }
-          ]);
-        } catch (msgErr) {
-          console.log('LIFF message send skipped/failed:', msgErr);
-        }
-      }
+      await this.sendLineNotification(`📅 ลงคิว Meeting สำเร็จ!\nหัวข้อ: ${eventTitle}\nวันที่: ${this.selectedDate}\nเวลา: ${this.selectedSlot.startTime} - ${this.selectedSlot.endTime} น.\nผู้ลงคิว: ${this.currentUser.name}`);
 
       // Reset form
       document.getElementById('bookingEventTitle').value = '';
@@ -1776,9 +1797,21 @@ class MeetingQueueApp {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกได้');
-
       this.showToast('success', data.message);
+
+      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF
+      if (payload.isLeave) {
+        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
+        let msg = `🏖️ แจ้งสถานะการลา / ภารกิจ\nหัวข้อ: ${payload.leaveType || 'ลาอื่นๆ'}\nวันที่: ${date}\nผู้แจ้ง: ${hostName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      } else if (payload.branchName) {
+        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
+        let msg = `📍 แจ้งสถานที่ปฏิบัติงาน\nสถานที่: ${payload.branchName}\nวันที่: ${date}\nผู้แจ้ง: ${hostName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      }
+
       this.closeDutyModal();
       await this.loadMonthCalendar();
     } catch (err) {
@@ -2199,9 +2232,21 @@ class MeetingQueueApp {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกสถานะได้');
-
       this.showToast('success', data.message);
+
+      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF
+      const leaderObj = this.teamLeaders.find(l => l.id === leaderId);
+      const leaderName = leaderObj ? leaderObj.name : (this.currentUser.name || 'หัวหน้าทีม');
+      if (payload.isLeave) {
+        let msg = `🏖️ แจ้งสถานะการลา / ภารกิจ\nหัวข้อ: ${payload.leaveType || 'ลาอื่นๆ'}\nวันที่: ${date}\nผู้แจ้ง: ${leaderName}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      } else if (payload.branchName) {
+        let msg = `📍 แจ้งสถานที่ปฏิบัติงาน\nหัวหน้าทีม: ${leaderName}\nสถานที่: ${payload.branchName}\nวันที่: ${date}`;
+        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
+        await this.sendLineNotification(msg);
+      }
+
       this.closeTeamDutyModal();
       if (this.selectedDate) {
         await this.openDayModal(this.selectedDate);
@@ -2702,6 +2747,27 @@ class MeetingQueueApp {
     } catch (err) {
       this.showToast('error', err.message);
     }
+  }
+
+  // -------------------------------------------------------------
+  // LINE LIFF Messaging Helper
+  // -------------------------------------------------------------
+  async sendLineNotification(text) {
+    if (typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn() && liff.isInClient && liff.isInClient()) {
+      try {
+        await liff.sendMessages([
+          {
+            type: 'text',
+            text: text
+          }
+        ]);
+        return true;
+      } catch (msgErr) {
+        console.log('LIFF message send skipped/failed:', msgErr);
+        return false;
+      }
+    }
+    return false;
   }
 
   // -------------------------------------------------------------

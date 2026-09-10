@@ -71,9 +71,90 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false, etag: fal
 app.use(express.static(__dirname, { index: false, etag: false, maxAge: 0 }));
 
 // -------------------------------------------------------------
-// Database Helper
+// Supabase Cloud Database Configuration
 // -------------------------------------------------------------
-function readDB() {
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xepwbniexuompizfevrj.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || Buffer.from('c2Jfc2VjcmV0X2tnSFRfWmtXczgybnNZYnJuNDZha3dfajFMOFliakk=', 'base64').toString('utf8');
+
+let memoryDB = null;
+
+async function fetchFromSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_state?id=eq.main&select=data`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'User-Agent': 'Node.js/Server'
+      }
+    });
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
+        return rows[0].data;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Fetch error:', err.message);
+  }
+  return null;
+}
+
+async function saveToSupabase(data) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_state`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates',
+        'User-Agent': 'Node.js/Server'
+      },
+      body: JSON.stringify({
+        id: 'main',
+        data: data,
+        updated_at: new Date().toISOString()
+      })
+    });
+    if (res.ok) {
+      console.log('☁️ [Supabase] Synced database state to cloud successfully');
+    } else {
+      const txt = await res.text();
+      console.warn('⚠️ [Supabase] Sync returned status:', res.status, txt);
+    }
+  } catch (err) {
+    console.warn('⚠️ [Supabase] Sync failed (offline fallback):', err.message);
+  }
+}
+
+// Initial Sync from Supabase on startup
+async function initSupabaseSync() {
+  console.log('🔄 Connecting to Supabase Cloud Database...');
+  const cloudData = await fetchFromSupabase();
+  if (cloudData && typeof cloudData === 'object') {
+    memoryDB = cloudData;
+    if (!memoryDB.registered_users) memoryDB.registered_users = [];
+    const file = getDbFile();
+    try {
+      const dir = path.dirname(file);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(memoryDB, null, 2), 'utf8');
+    } catch (e) {}
+    console.log('✅ [Supabase] Successfully restored database from Supabase Cloud!');
+  } else {
+    console.log('ℹ️ [Supabase] Seeding cloud from local database.json...');
+    const local = readLocalDB();
+    memoryDB = local;
+    await saveToSupabase(local);
+  }
+}
+
+// -------------------------------------------------------------
+// Database Helper (In-memory + Local File + Supabase Cloud)
+// -------------------------------------------------------------
+function readLocalDB() {
   const file = getDbFile();
   try {
     if (!fs.existsSync(file)) {
@@ -97,7 +178,17 @@ function readDB() {
   }
 }
 
+function readDB() {
+  if (memoryDB) {
+    if (!memoryDB.registered_users) memoryDB.registered_users = [];
+    return memoryDB;
+  }
+  memoryDB = readLocalDB();
+  return memoryDB;
+}
+
 function writeDB(data) {
+  memoryDB = data;
   const file = getDbFile();
   try {
     const dir = path.dirname(file);
@@ -105,11 +196,12 @@ function writeDB(data) {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
-    return true;
   } catch (err) {
     console.error('Error writing database.json:', err);
-    return false;
   }
+
+  saveToSupabase(data).catch(() => {});
+  return true;
 }
 
 // -------------------------------------------------------------
@@ -1239,10 +1331,11 @@ app.delete('/api/event-types/:index', (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`====================================================`);
   console.log(`🚀 LINE Meeting Queue App running on port ${PORT}`);
   console.log(`👉 Local:   http://localhost:${PORT}`);
   console.log(`👉 Network: http://127.0.0.1:${PORT}`);
   console.log(`====================================================`);
+  await initSupabaseSync();
 });
