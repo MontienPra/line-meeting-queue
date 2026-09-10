@@ -408,6 +408,20 @@
               </select>
             </div>
 
+            <!-- สลับทำงานครึ่งวัน (เปิดเฉพาะช่วงเช้า 08:00 - 12:00 น. รองรับเสาร์ต้น/ปลายเดือน) -->
+            <div id="inlineHostHalfDayRow" class="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
+              <div class="pr-2">
+                <div class="font-bold text-slate-800 text-xs flex items-center space-x-1">
+                  <span>⏰ ทำงานครึ่งวัน (08:00 - 12:00 น.)</span>
+                </div>
+                <div class="text-[10px] text-slate-500">เปิดรับคิวช่วงเช้า 4 ช่วงเวลา (เหมาะสำหรับวันเสาร์ต้น/ปลายเดือน)</div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" id="inlineHostHalfDay" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+            </div>
+
             <div id="inlineHostLeaveSelectRow" class="hidden">
               <label class="block font-bold text-slate-700 mb-1">ประเภทการลา</label>
               <select id="inlineHostLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
@@ -421,13 +435,19 @@
 
             <div>
               <label class="block font-bold text-slate-700 mb-1">หมายเหตุสถานที่ / ภารกิจ</label>
-              <input type="text" id="inlineHostNoteInput" placeholder="เช่น อาคาร A ชั้น 5 ห้องประชุม 501 หรือ เข้าบ่าย" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+              <input type="text" id="inlineHostNoteInput" placeholder="เช่น ไม่ระบุสถานที่ หรือ ประชุมเช้า" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
             </div>
 
-            <button onclick="app.saveInlineHostDuty()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
-              <i data-lucide="check" class="w-4 h-4"></i>
-              <span>บันทึกสถานะของ Host</span>
-            </button>
+            <div class="space-y-2 pt-1">
+              <button onclick="app.saveInlineHostDuty()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>บันทึกสถานะของ Host</span>
+              </button>
+              <button type="button" onclick="app.clearInlineHostDuty()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 border border-slate-200" title="ล้างการตั้งค่าของวันนี้ กลับเป็นสถานะว่างปกติโดยไม่แสดงป้ายสถานที่">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-500"></i>
+                <span>🧹 ล้างสถานะ / รีเซ็ตเป็นวันว่างปกติ (ไม่ระบุสถานที่)</span>
+              </button>
+            </div>
           </div>
 
           <!-- แท็บย่อย 2: บล็อกช่วงเวลาเฉพาะชั่วโมงของ Host -->
@@ -1021,9 +1041,28 @@
           </select>
         </div>
 
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาเริ่มงาน (จ.-ศ.)</label>
+            <select id="settingWorkStartHour" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+              <option value="8">08:00 น.</option>
+              <option value="9">09:00 น.</option>
+              <option value="10">10:00 น.</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาเลิกงาน (จ.-ศ.)</label>
+            <select id="settingWorkEndHour" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+              <option value="16">16:00 น.</option>
+              <option value="17">17:00 น.</option>
+              <option value="18">18:00 น.</option>
+            </select>
+          </div>
+        </div>
+
         <div class="flex items-center space-x-2 pt-1">
           <input type="checkbox" id="settingWeekendOpen" class="rounded text-amber-600 focus:ring-amber-500">
-          <label for="settingWeekendOpen" class="font-bold text-slate-700 cursor-pointer">เปิดรับคิววันเสาร์ - อาทิตย์</label>
+          <label for="settingWeekendOpen" class="font-bold text-slate-700 cursor-pointer">เปิดรับคิววันเสาร์ - อาทิตย์ (ทั้งวัน)</label>
         </div>
 
         <div class="pt-2">

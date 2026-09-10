@@ -57,12 +57,12 @@ function padZero(num) {
   return num < 10 ? '0' + num : '' + num;
 }
 
-function generateDaySlots(settings) {
-  const startHour = settings.workStartHour || 9;
-  const endHour = settings.workEndHour || 17;
+function generateDaySlots(settings, customHours = null) {
+  const startHour = customHours?.startHour || settings.workStartHour || 8;
+  const endHour = customHours?.endHour || settings.workEndHour || 17;
   const duration = settings.slotDurationMinutes || 60;
-  const lunchStart = settings.lunchStartHour ?? 12;
-  const lunchEnd = settings.lunchEndHour ?? 13;
+  const lunchStart = customHours?.lunchStartHour ?? (settings.lunchStartHour ?? 12);
+  const lunchEnd = customHours?.lunchEndHour ?? (settings.lunchEndHour ?? 13);
 
   const slots = [];
   let currentMinutes = startHour * 60;
@@ -117,9 +117,12 @@ function calculateDayStatus(dateStr, db, currentUserId) {
   const dateObj = new Date(dateStr + 'T00:00:00');
   const dayOfWeek = dateObj.getDay(); // 0 = Sun, 6 = Sat
 
-  // Check Weekend
+  // Check Weekend (allow override if duty specifies working Saturday / half-day or branch)
   const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-  if (isWeekend && !settings.weekendOpen) {
+  const duty = daily_duties[dateStr];
+  const isSpecialWorkingWeekend = isWeekend && duty && !duty.isLeave && (duty.isWorkingDay || duty.isHalfDay || duty.branchId);
+
+  if (isWeekend && !settings.weekendOpen && !isSpecialWorkingWeekend) {
     return {
       status: 'grey',
       statusText: 'วันหยุดสุดสัปดาห์ (ปิดรับคิว)',
@@ -132,7 +135,6 @@ function calculateDayStatus(dateStr, db, currentUserId) {
   }
 
   // Check Leave (ลาพักร้อน / ลากิจ)
-  const duty = daily_duties[dateStr];
   if (duty && duty.isLeave) {
     return {
       status: 'grey',
@@ -160,8 +162,9 @@ function calculateDayStatus(dateStr, db, currentUserId) {
     };
   }
 
-  // Generate standard slots
-  const allSlots = generateDaySlots(settings);
+  // Generate standard slots (or custom half-day slots if specified: 08:00 - 12:00)
+  const customHours = (duty && duty.isHalfDay) ? { startHour: 8, endHour: 12, lunchStartHour: 12, lunchEndHour: 12 } : null;
+  const allSlots = generateDaySlots(settings, customHours);
   const totalSlotsCount = allSlots.length;
 
   if (totalSlotsCount === 0) {
@@ -259,7 +262,7 @@ app.get('/api/calendar/month', (req, res) => {
     const roster = [];
 
     // 1. Host Duty
-    if (duty) {
+    if (duty && (duty.isLeave || duty.branchName || duty.isHalfDay)) {
       const hostShortName = (db.settings.hostName || 'มณเทียร').replace(/^(คุณ|\(.*\))/g, '').trim().split(' ')[0] || 'มณเทียร';
       roster.push({
         id: 'host',
@@ -268,6 +271,7 @@ app.get('/api/calendar/month', (req, res) => {
         role: 'host',
         colorTheme: 'indigo',
         branchName: duty.branchName,
+        isHalfDay: !!duty.isHalfDay,
         isLeave: !!duty.isLeave,
         leaveType: duty.leaveType || null,
         note: duty.note || ''
@@ -355,7 +359,8 @@ app.get('/api/calendar/day', (req, res) => {
 
   const statusInfo = calculateDayStatus(date, db, currentUserId);
   const duty = db.daily_duties[date] || null;
-  const allSlots = generateDaySlots(db.settings);
+  const customHours = (duty && duty.isHalfDay) ? { startHour: 8, endHour: 12, lunchStartHour: 12, lunchEndHour: 12 } : null;
+  const allSlots = generateDaySlots(db.settings, customHours);
   const dayBlocks = (db.blocked_slots || []).filter(b => b.date === date);
   const dayBookings = (db.bookings || []).filter(b => b.date === date && b.status !== 'cancelled');
 
@@ -642,15 +647,28 @@ app.post('/api/host/duty', (req, res) => {
     return res.status(403).json({ error: 'เฉพาะ Host เท่านั้นที่สามารถอัปเดตสาขาและวันลาได้' });
   }
 
-  const { date, branchId, branchName, isLeave, leaveType, note } = req.body;
+  const { date, branchId, branchName, isLeave, leaveType, note, isHalfDay, isClear } = req.body;
   if (!date) {
     return res.status(400).json({ error: 'Missing date parameter' });
   }
 
   db.daily_duties = db.daily_duties || {};
+
+  // If user requests to clear / reset duty (กลับเป็นวันว่างปกติ ไม่ระบุสถานที่)
+  if (isClear || branchId === 'none' || branchId === 'clear') {
+    delete db.daily_duties[date];
+    writeDB(db);
+    return res.json({
+      message: 'ล้างสถานะเรียบร้อยแล้ว (กลับเป็นสถานะว่างปกติ ไม่ระบุสถานที่)',
+      duty: null
+    });
+  }
+
   db.daily_duties[date] = {
     branchId: branchId || null,
     branchName: branchName || null,
+    isWorkingDay: true,
+    isHalfDay: !!isHalfDay,
     isLeave: !!isLeave,
     leaveType: leaveType || (isLeave ? 'ลาพักร้อน' : null),
     note: note || '',
@@ -659,8 +677,19 @@ app.post('/api/host/duty', (req, res) => {
 
   writeDB(db);
 
+  let message = 'อัปเดตสถานะของ Host เรียบร้อยแล้ว';
+  if (isLeave) {
+    message = `บันทึกวัน ${leaveType || 'ลาพักร้อน'} เรียบร้อยแล้ว (ปิดรับคิวอัตโนมัติ)`;
+  } else if (isHalfDay) {
+    message = `เปิดรับคิวทำงานครึ่งวัน (09:00 - 12:00 น.) เรียบร้อยแล้ว`;
+  } else if (branchName) {
+    message = `อัปเดตสถานที่ประจำวัน: ${branchName} เรียบร้อยแล้ว`;
+  } else {
+    message = 'อัปเดตสถานะทำงานปกติ (ไม่ระบุสถานที่) เรียบร้อยแล้ว';
+  }
+
   res.json({
-    message: isLeave ? `บันทึกวัน ${leaveType || 'ลาพักร้อน'} เรียบร้อยแล้ว (ปิดรับคิวอัตโนมัติ)` : `อัปเดตสถานที่ประจำวัน: ${branchName} เรียบร้อยแล้ว`,
+    message,
     duty: db.daily_duties[date]
   });
 });
@@ -780,10 +809,12 @@ app.post('/api/settings', (req, res) => {
     return res.status(403).json({ error: 'เฉพาะ Host เท่านั้นที่สามารถแก้ไขการตั้งค่าได้' });
   }
 
-  const { hostName, defaultBranchId, slotDurationMinutes, liffId, weekendOpen, adminPin } = req.body;
+  const { hostName, defaultBranchId, slotDurationMinutes, liffId, weekendOpen, adminPin, workStartHour, workEndHour } = req.body;
   if (hostName && hostName.trim()) db.settings.hostName = hostName.trim();
   if (defaultBranchId !== undefined) db.settings.defaultBranchId = defaultBranchId;
   if (slotDurationMinutes) db.settings.slotDurationMinutes = parseInt(slotDurationMinutes);
+  if (workStartHour) db.settings.workStartHour = parseInt(workStartHour);
+  if (workEndHour) db.settings.workEndHour = parseInt(workEndHour);
   if (liffId !== undefined) db.settings.liffId = liffId;
   if (weekendOpen !== undefined) db.settings.weekendOpen = !!weekendOpen;
   if (adminPin) db.settings.adminPin = adminPin;

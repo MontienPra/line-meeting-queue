@@ -437,19 +437,25 @@ class MeetingQueueApp {
           let text = '';
           if (r.isLeave) {
             text = `🏖️ ลา`;
+          } else if (r.role === 'host') {
+            if (r.isHalfDay && !r.branchName) {
+              text = `⏰ ครึ่งวัน`;
+            } else if (r.branchName) {
+              let branchShort = r.branchName;
+              if (branchShort === 'สำนักงานใหญ่') branchShort = 'สนง.ใหญ่';
+              else if (branchShort === 'WFH / ออนไลน์') branchShort = 'WFH';
+              text = `👑 ${branchShort}${r.isHalfDay ? ' (ครึ่งวัน)' : ''}`;
+            } else {
+              // Host duty is blank/unspecified - do NOT render badge, keep cell clean
+              return;
+            }
           } else {
-            const roleIcon = r.role === 'host' ? '👑' : '📍';
-            let branchShort = r.branchName || 'SAM';
+            let branchShort = r.branchName || '';
             if (branchShort === 'สำนักงานใหญ่') branchShort = 'สนง.ใหญ่';
             else if (branchShort === 'WFH / ออนไลน์') branchShort = 'WFH';
-
-            if (r.role === 'host') {
-              text = `${roleIcon} ${branchShort}`;
-            } else {
-              text = `${r.shortName}: ${branchShort}`;
-            }
+            text = `${r.shortName}: ${branchShort || 'ปฏิบัติงาน'}`;
           }
-          rosterBadgesHtml += `<span class="badge-person ${themeClass}" title="${r.name}: ${r.isLeave ? (r.leaveType || 'ลาพักร้อน') : r.branchName}">${text}</span>`;
+          rosterBadgesHtml += `<span class="badge-person ${themeClass}" title="${r.name}: ${r.isLeave ? (r.leaveType || 'ลาพักร้อน') : (r.branchName || 'ปฏิบัติงาน')}">${text}</span>`;
         });
         if (day.roster.length > 2) {
           rosterBadgesHtml += `<span class="text-[7.5px] text-slate-400 font-bold block text-center leading-none">+${day.roster.length - 2}</span>`;
@@ -562,12 +568,21 @@ class MeetingQueueApp {
         // Populate host branches
         const hostBranchSelect = document.getElementById('inlineHostBranchSelect');
         hostBranchSelect.innerHTML = '';
+        
+        // Option 1: None (Blank / Work normally without showing location badge)
+        const optNone = document.createElement('option');
+        optNone.value = 'none';
+        optNone.textContent = '🔘 ไม่ระบุสถานที่ (ทำงานปกติ / แสดงตารางว่าง)';
+        hostBranchSelect.appendChild(optNone);
+
         this.branches.forEach(b => {
           const opt = document.createElement('option');
           opt.value = b.id;
           opt.textContent = `${b.name} (${b.address || ''})`;
           hostBranchSelect.appendChild(opt);
         });
+
+        const halfDayCheckbox = document.getElementById('inlineHostHalfDay');
 
         // Prefill Host Duty
         if (data.duty) {
@@ -576,12 +591,18 @@ class MeetingQueueApp {
             document.getElementById('inlineHostLeaveTypeSelect').value = data.duty.leaveType || 'ลาพักร้อน';
           } else {
             this.setInlineHostDutyMode('work');
-            if (data.duty.branchId) hostBranchSelect.value = data.duty.branchId;
+            if (data.duty.branchId) {
+              hostBranchSelect.value = data.duty.branchId;
+            } else {
+              hostBranchSelect.value = 'none';
+            }
           }
+          if (halfDayCheckbox) halfDayCheckbox.checked = !!data.duty.isHalfDay;
           document.getElementById('inlineHostNoteInput').value = data.duty.note || '';
         } else {
           this.setInlineHostDutyMode('work');
-          if (this.branches.length > 0) hostBranchSelect.value = this.branches[0].id;
+          hostBranchSelect.value = 'none';
+          if (halfDayCheckbox) halfDayCheckbox.checked = false;
           document.getElementById('inlineHostNoteInput').value = '';
         }
       } else {
@@ -601,18 +622,26 @@ class MeetingQueueApp {
         dutyBanner.classList.remove('hidden');
         if (data.duty.isLeave) {
           dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-rose-50 border-rose-200 text-rose-900';
-          dutyTitle.textContent = `🏖️ หัวหน้าลา: ${data.duty.leaveType || 'ลาพักร้อน'}`;
-          dutyDesc.textContent = data.duty.note || 'วันหยุดประจำปี - ไม่เปิดรับคิวการประชุม';
-        } else {
+          dutyTitle.textContent = `🏖️ เจ้าของคิว (Host) ลา: ${data.duty.leaveType || 'ลาพักร้อน'}`;
+          dutyDesc.textContent = data.duty.note || 'ปิดรับคิวการประชุม';
+        } else if (data.duty.isHalfDay && !data.duty.branchName) {
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-amber-50 border-amber-200 text-amber-900';
+          dutyTitle.textContent = '⏰ ปฏิบัติงานครึ่งวัน (08:00 - 12:00 น.)';
+          dutyDesc.textContent = data.duty.note || 'เปิดรับคิว 4 ช่วงเวลาในตอนเช้า (08:00 - 12:00 น.)';
+        } else if (data.duty.branchName) {
           dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-blue-50 border-blue-200 text-blue-900';
-          dutyTitle.textContent = `📍 สถานที่ของหัวหน้า: ${data.duty.branchName || 'สำนักงานใหญ่'}`;
+          dutyTitle.textContent = `📍 สถานที่ปฏิบัติงาน: ${data.duty.branchName}${data.duty.isHalfDay ? ' (ครึ่งวันเช้า)' : ''}`;
           dutyDesc.textContent = data.duty.note || 'เข้าปฏิบัติงานตามปกติ สามารถลงคิวเข้าพบได้';
+        } else {
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-50 border-slate-200 text-slate-700';
+          dutyTitle.textContent = '📍 สถานะ: เข้าปฏิบัติงานตามปกติ';
+          dutyDesc.textContent = data.duty.note || 'เปิดรับคิวการประชุมตามปกติ';
         }
       } else {
         dutyBanner.classList.remove('hidden');
         dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-50 border-slate-200 text-slate-700';
-        dutyTitle.textContent = '📍 สถานที่ของหัวหน้า: สำนักงานใหญ่ (ปกติ)';
-        dutyDesc.textContent = 'เข้าปฏิบัติงานตามปกติ';
+        dutyTitle.textContent = '📍 สถานะ: เข้าปฏิบัติงานตามปกติ';
+        dutyDesc.textContent = 'เปิดรับคิวการประชุมตามปกติ';
       }
 
       // 3. Setup Team Leader Inline Box & Leaders List
@@ -918,7 +947,8 @@ class MeetingQueueApp {
   async saveInlineHostDuty() {
     if (!this.selectedDate) return;
     const note = document.getElementById('inlineHostNoteInput').value.trim();
-    let payload = { date: this.selectedDate, note };
+    const isHalfDay = document.getElementById('inlineHostHalfDay') ? document.getElementById('inlineHostHalfDay').checked : false;
+    let payload = { date: this.selectedDate, note, isHalfDay };
 
     if (this.inlineHostMode === 'leave') {
       const leaveType = document.getElementById('inlineHostLeaveTypeSelect').value;
@@ -926,10 +956,20 @@ class MeetingQueueApp {
       payload.leaveType = leaveType;
     } else {
       const branchId = document.getElementById('inlineHostBranchSelect').value;
-      const branchObj = this.branches.find(b => b.id === branchId);
-      payload.isLeave = false;
-      payload.branchId = branchId;
-      payload.branchName = branchObj ? branchObj.name : 'สำนักงานใหญ่';
+      if (branchId === 'none' || branchId === 'clear') {
+        if (!isHalfDay && !note) {
+          payload.isClear = true;
+        } else {
+          payload.isLeave = false;
+          payload.branchId = null;
+          payload.branchName = null;
+        }
+      } else {
+        const branchObj = this.branches.find(b => b.id === branchId);
+        payload.isLeave = false;
+        payload.branchId = branchId;
+        payload.branchName = branchObj ? branchObj.name : 'สำนักงานใหญ่';
+      }
     }
 
     try {
@@ -947,6 +987,33 @@ class MeetingQueueApp {
       if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกได้');
 
       this.showToast('success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async clearInlineHostDuty() {
+    if (!this.selectedDate) return;
+    try {
+      const res = await fetch('/api/host/duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({
+          date: this.selectedDate,
+          isClear: true
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถล้างสถานะได้');
+
+      this.showToast('success', data.message || 'รีเซ็ตสถานะเป็นวันว่างปกติเรียบร้อยแล้ว');
       await this.openDayModal(this.selectedDate);
       await this.loadMonthCalendar();
     } catch (err) {
@@ -2141,6 +2208,12 @@ class MeetingQueueApp {
         branchSelect.value = s.defaultBranchId;
       }
       document.getElementById('settingSlotDuration').value = s.slotDurationMinutes || 60;
+      if (document.getElementById('settingWorkStartHour')) {
+        document.getElementById('settingWorkStartHour').value = s.workStartHour || 8;
+      }
+      if (document.getElementById('settingWorkEndHour')) {
+        document.getElementById('settingWorkEndHour').value = s.workEndHour || 17;
+      }
       document.getElementById('settingWeekendOpen').checked = !!s.weekendOpen;
 
       document.getElementById('settingsModal').classList.remove('hidden');
@@ -2158,6 +2231,8 @@ class MeetingQueueApp {
     const hostName = document.getElementById('settingHostName').value.trim();
     const defaultBranchId = document.getElementById('settingHostDefaultBranch') ? document.getElementById('settingHostDefaultBranch').value : undefined;
     const slotDurationMinutes = document.getElementById('settingSlotDuration').value;
+    const workStartHour = document.getElementById('settingWorkStartHour') ? document.getElementById('settingWorkStartHour').value : 8;
+    const workEndHour = document.getElementById('settingWorkEndHour') ? document.getElementById('settingWorkEndHour').value : 17;
     const weekendOpen = document.getElementById('settingWeekendOpen').checked;
 
     if (!hostName) {
@@ -2177,6 +2252,8 @@ class MeetingQueueApp {
           hostName,
           defaultBranchId,
           slotDurationMinutes: parseInt(slotDurationMinutes),
+          workStartHour: parseInt(workStartHour),
+          workEndHour: parseInt(workEndHour),
           weekendOpen
         })
       });
