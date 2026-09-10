@@ -5,31 +5,95 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const DB_FILE = path.join(DB_DIR, 'database.json');
+function getDbFile() {
+  if (process.env.DATA_DIR) {
+    const customDir = process.env.DATA_DIR;
+    if (!fs.existsSync(customDir)) fs.mkdirSync(customDir, { recursive: true });
+    return path.join(customDir, 'database.json');
+  }
+  const rootDb = path.join(__dirname, 'database.json');
+  const dataDb = path.join(__dirname, 'data', 'database.json');
+  if (fs.existsSync(rootDb) && fs.existsSync(dataDb)) {
+    const mRoot = fs.statSync(rootDb).mtimeMs;
+    const mData = fs.statSync(dataDb).mtimeMs;
+    return mRoot >= mData ? rootDb : dataDb;
+  }
+  if (fs.existsSync(rootDb)) return rootDb;
+  return dataDb;
+}
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files with no-cache headers
+app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
+app.use(express.static(__dirname, { etag: false, maxAge: 0 }));
+
+// Root route: Serve newest index.html (whether in public/ or root)
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const rootIndex = path.join(__dirname, 'index.html');
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(rootIndex) && fs.existsSync(publicIndex)) {
+    const mRoot = fs.statSync(rootIndex).mtimeMs;
+    const mPub = fs.statSync(publicIndex).mtimeMs;
+    return res.sendFile(mRoot >= mPub ? rootIndex : publicIndex);
+  }
+  if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
+  if (fs.existsSync(publicIndex)) return res.sendFile(publicIndex);
+  res.send('LINE Meeting Queue App Running');
+});
+
+// App JS route: Serve newest app.js (whether in public/js/, js/, or root)
+app.get('/js/app.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const candidates = [
+    path.join(__dirname, 'public', 'js', 'app.js'),
+    path.join(__dirname, 'js', 'app.js'),
+    path.join(__dirname, 'app.js')
+  ].filter(p => fs.existsSync(p));
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    return res.sendFile(candidates[0]);
+  }
+  res.status(404).send('app.js not found');
+});
+
+// CSS route: Serve newest styles.css
+app.get('/css/styles.css', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const candidates = [
+    path.join(__dirname, 'public', 'css', 'styles.css'),
+    path.join(__dirname, 'css', 'styles.css'),
+    path.join(__dirname, 'styles.css')
+  ].filter(p => fs.existsSync(p));
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    return res.sendFile(candidates[0]);
+  }
+  res.status(404).send('styles.css not found');
+});
 
 // -------------------------------------------------------------
 // Database Helper
 // -------------------------------------------------------------
 function readDB() {
+  const file = getDbFile();
   try {
-    if (!fs.existsSync(DB_FILE)) {
+    if (!fs.existsSync(file)) {
       const defaultPath = path.join(__dirname, 'data', 'database.json');
-      if (DB_FILE !== defaultPath && fs.existsSync(defaultPath)) {
-        if (!fs.existsSync(DB_DIR)) {
-          fs.mkdirSync(DB_DIR, { recursive: true });
-        }
+      if (file !== defaultPath && fs.existsSync(defaultPath)) {
+        const dir = path.dirname(file);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const defaultData = fs.readFileSync(defaultPath, 'utf8');
-        fs.writeFileSync(DB_FILE, defaultData, 'utf8');
+        fs.writeFileSync(file, defaultData, 'utf8');
         return JSON.parse(defaultData);
       }
-      return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [] };
+      return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [], registered_users: [] };
     }
-    const data = fs.readFileSync(DB_FILE, 'utf8');
+    const data = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(data);
     if (!parsed.registered_users) parsed.registered_users = [];
     return parsed;
@@ -40,11 +104,13 @@ function readDB() {
 }
 
 function writeDB(data) {
+  const file = getDbFile();
   try {
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
+    const dir = path.dirname(file);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
     return true;
   } catch (err) {
     console.error('Error writing database.json:', err);

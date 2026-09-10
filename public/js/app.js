@@ -123,6 +123,20 @@ class MeetingQueueApp {
         };
         localStorage.setItem('liff_mock_user', JSON.stringify(this.currentUser));
         this.updateUserUI();
+
+        // Check-in member to server directory
+        try {
+          fetch('/api/users/checkin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: profile.userId,
+              displayName: profile.displayName,
+              pictureUrl: profile.pictureUrl
+            })
+          }).catch(() => {});
+        } catch (e) {}
+
         this.showToast('success', `ยินดีต้อนรับคุณ ${profile.displayName} (${role === 'host' ? '👑 Host' : role === 'team_leader' ? '👤 หัวหน้าทีม' : 'พนักงาน'})`);
       } else if (liff.isInClient()) {
         liff.login();
@@ -242,6 +256,7 @@ class MeetingQueueApp {
     const tabHostBtnText = document.getElementById('tabHostBtnText');
     const hostAdminSettingsGrid = document.getElementById('hostAdminSettingsGrid');
     const hostClearTestBookingsBtn = document.getElementById('hostClearTestBookingsBtn');
+    const hostAdminActionBtns = document.getElementById('hostAdminActionBtns');
     const hostHeaderBanner = document.getElementById('hostHeaderBanner');
     const hostRoleBadge = document.getElementById('hostRoleBadge');
     const hostPanelTitle = document.getElementById('hostPanelTitle');
@@ -252,6 +267,7 @@ class MeetingQueueApp {
       if (tabHostBtnText) tabHostBtnText.textContent = 'จัดการระบบ (Host)';
       if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.remove('hidden');
       if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.remove('hidden');
+      if (hostAdminActionBtns) hostAdminActionBtns.classList.remove('hidden');
       if (hostHeaderBanner) {
         hostHeaderBanner.className = 'bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-md';
       }
@@ -269,6 +285,7 @@ class MeetingQueueApp {
       if (tabHostBtnText) tabHostBtnText.textContent = 'คิวทั้งหมด (ทีม)';
       if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.add('hidden');
       if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.add('hidden');
+      if (hostAdminActionBtns) hostAdminActionBtns.classList.add('hidden');
       if (hostHeaderBanner) {
         hostHeaderBanner.className = 'bg-gradient-to-r from-teal-600 via-cyan-700 to-teal-800 rounded-2xl p-4 text-white shadow-md';
       }
@@ -286,6 +303,7 @@ class MeetingQueueApp {
       if (tabHostBtnText) tabHostBtnText.textContent = 'จัดการคิว (Host)';
       if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.remove('hidden');
       if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.remove('hidden');
+      if (hostAdminActionBtns) hostAdminActionBtns.classList.remove('hidden');
     }
 
     const liveBadge = document.getElementById('userLiveBadge');
@@ -906,6 +924,84 @@ class MeetingQueueApp {
       }
     } catch (err) {
       this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Backup & Restore Database (สำรองและกู้คืนฐานข้อมูล)
+  // -------------------------------------------------------------
+  async exportDatabase() {
+    if (this.currentUser.role !== 'host') {
+      this.showToast('error', 'ความปลอดภัย: เฉพาะ Host เท่านั้นที่สามารถสำรองข้อมูลได้');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/export-database', {
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'ไม่สามารถดาวน์โหลดข้อมูลได้');
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `database.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      this.showToast('success', '📥 ดาวน์โหลดไฟล์สำรองข้อมูล database.json เรียบร้อยแล้ว');
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async importDatabase(e) {
+    if (this.currentUser.role !== 'host') {
+      this.showToast('error', 'ความปลอดภัย: เฉพาะ Host เท่านั้นที่สามารถกู้คืนข้อมูลได้');
+      e.target.value = '';
+      return;
+    }
+
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    if (!confirm(`ต้องการกู้คืนฐานข้อมูลจากไฟล์ "${file.name}" ใช่หรือไม่?\n\nข้อมูลการตั้งค่า, สาขา, รายชื่อหัวหน้าทีม และคิวการจองทั้งหมดจะถูกแทนที่ด้วยข้อมูลจากไฟล์นี้`)) {
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      const res = await fetch('/api/admin/import-database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify(json)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถกู้คืนข้อมูลได้');
+
+      this.showToast('success', '📤 กู้คืนฐานข้อมูลสำเร็จแล้ว กำลังโหลดข้อมูลใหม่...');
+      setTimeout(() => location.reload(), 1200);
+    } catch (err) {
+      this.showToast('error', 'เกิดข้อผิดพลาดในการกู้คืน: ' + err.message);
+    } finally {
+      e.target.value = '';
     }
   }
 
@@ -2137,9 +2233,51 @@ class MeetingQueueApp {
     document.getElementById('newLeaderDept').value = '';
     document.getElementById('newLeaderLineId').value = '';
 
+    // โหลดรายชื่อสมาชิก LINE ที่เคยเข้าใช้ระบบลงใน Dropdown
+    await this.populateRegisteredUsersDropdown();
+
     await this.renderTeamLeaderManageList();
     document.getElementById('teamLeaderManageModal').classList.remove('hidden');
     lucide.createIcons();
+  }
+
+  async populateRegisteredUsersDropdown() {
+    const userSelect = document.getElementById('selectRegisteredUser');
+    if (!userSelect) return;
+    userSelect.innerHTML = '<option value="">-- แตะเพื่อเลือกสมาชิก LINE ที่เคยเข้าใช้ระบบ --</option>';
+
+    try {
+      const res = await fetch('/api/users');
+      const data = await res.json();
+      this.registeredUsers = data.users || [];
+
+      this.registeredUsers.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.userId;
+        const shortId = (u.userId || '').length > 10 ? (u.userId.substring(0, 8) + '...') : u.userId;
+        opt.textContent = `👤 ${u.displayName} (${shortId})`;
+        userSelect.appendChild(opt);
+      });
+    } catch (e) {
+      console.warn('Could not load users:', e);
+    }
+  }
+
+  onSelectRegisteredUser(userId) {
+    if (!userId) {
+      document.getElementById('newLeaderName').value = '';
+      document.getElementById('newLeaderLineId').value = '';
+      return;
+    }
+
+    const user = (this.registeredUsers || []).find(u => u.userId === userId);
+    if (user) {
+      document.getElementById('newLeaderName').value = user.displayName || '';
+      document.getElementById('newLeaderLineId').value = user.userId || '';
+      if (!document.getElementById('newLeaderDept').value) {
+        document.getElementById('newLeaderDept').value = 'Unit';
+      }
+    }
   }
 
   closeTeamLeaderManageModal() {
@@ -2298,6 +2436,8 @@ class MeetingQueueApp {
       document.getElementById('newLeaderName').value = '';
       document.getElementById('newLeaderDept').value = '';
       document.getElementById('newLeaderLineId').value = '';
+      const selectReg = document.getElementById('selectRegisteredUser');
+      if (selectReg) selectReg.value = '';
       await this.renderTeamLeaderManageList();
       await this.loadMonthCalendar();
     } catch (err) {

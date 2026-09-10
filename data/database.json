@@ -55,7 +55,7 @@
       "id": "tl-1788968705188",
       "name": "Moo",
       "department": "Unit",
-      "lineUserId": "U_LEAD_1788968705188",
+      "lineUserId": "U06bba4ee6a033865cc8fdd9676d142a0",
       "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=Moo",
       "defaultBranchId": "br-1788970642346"
     },
@@ -63,7 +63,7 @@
       "id": "tl-1788968718995",
       "name": "GOT",
       "department": "UNIT",
-      "lineUserId": "U_LEAD_1788968718995",
+      "lineUserId": "U5825687603bdd294f6e82e830030cbc7",
       "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=GOT",
       "defaultBranchId": "br-1788970617847"
     },
@@ -71,7 +71,7 @@
       "id": "tl-1788968731923",
       "name": "NC",
       "department": "UNIT",
-      "lineUserId": "U_LEAD_1788968731923",
+      "lineUserId": "U5825687603bdd294f6e82e830030cbc7",
       "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=NC",
       "defaultBranchId": "br-1788970642346"
     }
@@ -313,5 +313,28 @@
       "createdAt": "2026-09-09T16:45:24.181Z"
     }
   ],
-  "bookings": []
+  "bookings": [],
+  "registered_users": [
+    {
+      "userId": "U0547143d0738f92fe64497e5f49dcefe",
+      "displayName": "Gas",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=Gas",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    },
+    {
+      "userId": "U06bba4ee6a033865cc8fdd9676d142a0",
+      "displayName": "Moo",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=Moo",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    },
+    {
+      "userId": "U5825687603bdd294f6e82e830030cbc7",
+      "displayName": "GOT / NC",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=GOT",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    }
+  ]
 }

@@ -11,7 +11,10 @@
   <!-- LINE LIFF SDK -->
   <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="css/styles.css">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="stylesheet" href="css/styles.css?v=2.2">
 </head>
 <body class="min-h-screen pb-16">
 
@@ -24,7 +27,7 @@
         </div>
         <div>
           <h1 class="font-bold text-slate-800 text-base sm:text-lg leading-tight">ระบบลงคิว Meeting</h1>
-          <p id="hostNameHeader" class="text-xs text-slate-500 font-medium">คิวของ: คุณมณเทียร (Manager)</p>
+          <p id="hostNameHeader" class="text-xs text-slate-500 font-medium">คิวของ: Gas (Host)</p>
         </div>
       </div>
 
@@ -323,10 +326,21 @@
           </div>
           <div class="flex items-center space-x-2">
             <span id="hostTotalBookingsCount" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">0 รายการ</span>
-            <button id="hostClearTestBookingsBtn" onclick="app.clearTestBookings()" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="ล้างข้อมูลการจองทดสอบเพื่อเตรียมใช้งานจริง">
-              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-              <span>ล้างคิวทดสอบ</span>
-            </button>
+            <div id="hostAdminActionBtns" class="flex items-center space-x-1.5">
+              <button onclick="app.exportDatabase()" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="ดาวน์โหลดไฟล์ฐานข้อมูลล่าสุด (Backup) เก็บไว้ในคอมพิวเตอร์">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">สำรองข้อมูล</span>
+              </button>
+              <label class="cursor-pointer px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="กู้คืนฐานข้อมูลจากไฟล์ database.json">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">กู้คืนข้อมูล</span>
+                <input type="file" accept=".json" class="hidden" onchange="app.importDatabase(event)">
+              </label>
+              <button id="hostClearTestBookingsBtn" onclick="app.clearTestBookings()" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="ล้างข้อมูลการจองทดสอบเพื่อเตรียมใช้งานจริง">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>ล้างคิวทดสอบ</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -937,11 +951,26 @@
         </div>
 
         <!-- Add Leader Form -->
-        <div class="pt-3 border-t border-slate-200 space-y-2.5 bg-slate-50 p-3.5 rounded-2xl">
-          <h4 class="font-bold text-xs text-slate-700 flex items-center space-x-1.5">
-            <i data-lucide="user-plus" class="w-3.5 h-3.5 text-indigo-600"></i>
-            <span>เพิ่มหัวหน้าทีมคนใหม่</span>
-          </h4>
+        <div class="pt-3 border-t border-slate-200 space-y-2.5 bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-xs text-indigo-900 flex items-center space-x-1.5">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>เพิ่ม / แต่งตั้งหัวหน้าทีม</span>
+            </h4>
+            <span class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">✨ เลือกสมาชิกได้เลย</span>
+          </div>
+
+          <!-- Direct Member Selector Dropdown -->
+          <div class="bg-white p-2.5 rounded-xl border border-indigo-200">
+            <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center space-x-1">
+              <span>👤 เลือกจากสมาชิก LINE ที่เคยเข้าใช้งาน:</span>
+            </label>
+            <select id="selectRegisteredUser" onchange="app.onSelectRegisteredUser(this.value)" class="w-full px-3 py-1.5 text-xs border border-indigo-300 rounded-lg bg-indigo-50/30 font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500">
+              <option value="">-- แตะเพื่อเลือกสมาชิก LINE ที่เคยเข้าใช้ระบบ --</option>
+            </select>
+            <p class="text-[10px] text-slate-400 mt-1">💡 สมาชิกที่เคยแตะเปิดลิงก์ใน LINE จะมีชื่อขึ้นที่นี่อัตโนมัติ ไม่ต้องคัดลอก LINE ID</p>
+          </div>
+
           <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">ชื่อ-นามสกุล <span class="text-rose-500">*</span></label>
@@ -959,12 +988,12 @@
             </select>
           </div>
           <div>
-            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">LINE User ID (ถ้ามี)</label>
-            <input type="text" id="newLeaderLineId" placeholder="เช่น U12345678... หรือเว้นว่างไว้เพื่อสร้างอัตโนมัติ" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">LINE User ID (ระบบดึงให้อัตโนมัติเมื่อเลือกสมาชิก)</label>
+            <input type="text" id="newLeaderLineId" placeholder="จะแสดงอัตโนมัติเมื่อเลือกสมาชิกด้านบน" class="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-slate-50 text-slate-500 font-mono text-[11px]">
           </div>
           <button onclick="app.addTeamLeader()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
             <i data-lucide="plus" class="w-4 h-4"></i>
-            <span>เพิ่มหัวหน้าทีม</span>
+            <span>บันทึกตั้งเป็นหัวหน้าทีม</span>
           </button>
         </div>
 
@@ -1133,7 +1162,7 @@
   <div id="toastContainer" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 pointer-events-none space-y-2"></div>
 
   <!-- App Script -->
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=2.2"></script>
   <script>
     // Initialize icons
     lucide.createIcons();
