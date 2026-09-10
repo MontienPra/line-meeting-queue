@@ -63,14 +63,15 @@ class MeetingQueueApp {
   async init() {
     this.setupDropdown();
     this.updateUserUI();
-    try {
-      await this.setupLiff();
-    } catch (e) {
-      console.warn('setupLiff caught in init:', e);
-    }
-    await this.loadMonthCalendar();
+
+    // 1. Load Calendar, My Bookings, and All Bookings immediately!
+    // (Never block UI on external network calls)
+    this.loadMonthCalendar();
     this.loadMyBookings();
     this.loadHostBookings();
+
+    // 2. Initialize LINE LIFF in the background with a 3-second safety timeout
+    this.setupLiff().catch(e => console.warn('setupLiff background catch:', e));
   }
 
   // -------------------------------------------------------------
@@ -87,7 +88,16 @@ class MeetingQueueApp {
     }
 
     try {
-      await liff.init({ liffId: this.liffId });
+      // 3-second safety timeout so desktop browsers and slow connections never hang
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('LIFF init timeout (3s)')), 3000)
+      );
+
+      await Promise.race([
+        liff.init({ liffId: this.liffId }),
+        timeoutPromise
+      ]);
+
       if (liff.isLoggedIn()) {
         const profile = await liff.getProfile();
 
@@ -142,12 +152,19 @@ class MeetingQueueApp {
         } catch (e) {}
 
         this.showToast('success', `ยินดีต้อนรับคุณ ${profile.displayName} (${role === 'host' ? '👑 Host' : role === 'team_leader' ? '👤 หัวหน้าทีม' : 'พนักงาน'})`);
-      } else if (liff.isInClient()) {
+        
+        // Refresh with real verified profile data
+        this.loadMonthCalendar();
+        this.loadMyBookings();
+        this.loadHostBookings();
+      } else if (typeof liff.isInClient === 'function' && liff.isInClient()) {
         liff.login();
       }
     } catch (err) {
-      console.error('LIFF init error:', err);
-      this.showToast('error', 'ไม่สามารถเชื่อมต่อ LINE LIFF ได้: ' + err.message);
+      console.warn('LIFF init notice:', err.message);
+      if (typeof liff !== 'undefined' && typeof liff.isInClient === 'function' && liff.isInClient()) {
+        this.showToast('error', 'ไม่สามารถเชื่อมต่อ LINE LIFF ได้: ' + err.message);
+      }
     }
   }
 
