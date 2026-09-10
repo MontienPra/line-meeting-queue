@@ -397,7 +397,7 @@
                 <span>🏢 ไปปฏิบัติงานที่สาขา</span>
               </button>
               <button type="button" id="inlineHostModeLeave" onclick="app.setInlineHostDutyMode('leave')" class="py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50">
-                <span>🏖️ แจ้งวันลา (ปิดรับคิว)</span>
+                <span>🏖️ แจ้งวันลา / On Sales</span>
               </button>
             </div>
 
@@ -423,14 +423,15 @@
             </div>
 
             <div id="inlineHostLeaveSelectRow" class="hidden">
-              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา</label>
+              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
               <select id="inlineHostLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+                <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
                 <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
                 <option value="ลากิจ">📝 ลากิจ</option>
                 <option value="ลาป่วย">🏥 ลาป่วย</option>
                 <option value="อบรมภายนอก">📚 อบรมภายนอก</option>
               </select>
-              <p class="text-[11px] text-amber-800 mt-1 font-medium">* เมื่อลา ระบบจะเปลี่ยนสถานะเป็นสีเทา (ปิดรับคิว) ให้อัตโนมัติ</p>
+              <p class="text-[11px] text-amber-800 mt-1 font-medium">* ระบบจะเปลี่ยนสถานะเป็นสีเทา (ปิดรับคิว) ให้อัตโนมัติ</p>
             </div>
 
             <div>
@@ -509,7 +510,7 @@
                 <span>🏢 ไปสาขา / WFH</span>
               </button>
               <button type="button" id="inlineLeaderModeLeave" onclick="app.setInlineLeaderDutyMode('leave')" class="py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50">
-                <span>🏖️ ลาพักร้อน / ลากิจ</span>
+                <span>🏖️ ลา / On Sales</span>
               </button>
             </div>
 
@@ -521,8 +522,9 @@
             </div>
 
             <div id="inlineLeaderLeaveSelectRow" class="hidden">
-              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา</label>
+              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
               <select id="inlineLeaderLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-teal-500">
+                <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
                 <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
                 <option value="ลากิจ">📝 ลากิจ</option>
                 <option value="ลาป่วย">🏥 ลาป่วย</option>
@@ -535,10 +537,16 @@
               <input type="text" id="inlineLeaderNoteInput" placeholder="เช่น ประชุมหน้างานตลอดเช้า, โทรเบอร์มือถือ" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
             </div>
 
-            <button onclick="app.saveInlineLeaderDuty()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
-              <i data-lucide="check" class="w-4 h-4"></i>
-              <span>บันทึกสถานะหัวหน้าทีม</span>
-            </button>
+            <div class="space-y-2 pt-1">
+              <button onclick="app.saveInlineLeaderDuty()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>บันทึกสถานะหัวหน้าทีม</span>
+              </button>
+              <button type="button" onclick="app.clearInlineLeaderDuty()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 border border-slate-200" title="ล้างการตั้งค่าของวันนี้ กลับเป็นสถานะว่างปกติโดยไม่แสดงป้ายสถานที่">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-500"></i>
+                <span>🧹 ล้างสถานะ / รีเซ็ตเป็นวันว่างปกติ (ไม่ระบุสถานที่)</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -667,7 +675,7 @@
               🏢 ปฏิบัติงานที่สาขา / WFH
             </button>
             <button type="button" id="dutyTypeLeaveBtn" onclick="app.setDutyMode('leave')" class="py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition">
-              🏖️ ลาพักร้อน (ปิดรับคิว)
+              🏖️ ลาพักร้อน / On Sales
             </button>
           </div>
         </div>
@@ -680,8 +688,9 @@
         </div>
 
         <div id="dutyLeaveSection" class="hidden">
-          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา</label>
+          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
           <select id="dutyLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500">
+            <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
             <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
             <option value="ลากิจ">📝 ลากิจ</option>
             <option value="ลาป่วย">🏥 ลาป่วย</option>
@@ -867,7 +876,7 @@
               🏢 ไปสาขา / WFH
             </button>
             <button type="button" id="teamDutyTypeLeaveBtn" onclick="app.setTeamDutyMode('leave')" class="py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition">
-              🏖️ ลาพักร้อน / ลากิจ
+              🏖️ ลาพักร้อน / On Sales
             </button>
           </div>
         </div>
@@ -880,8 +889,9 @@
         </div>
 
         <div id="teamDutyLeaveSection" class="hidden">
-          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา</label>
+          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
           <select id="teamDutyLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-teal-500">
+            <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
             <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
             <option value="ลากิจ">📝 ลากิจ</option>
             <option value="ลาป่วย">🏥 ลาป่วย</option>

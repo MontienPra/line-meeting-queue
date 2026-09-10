@@ -282,7 +282,7 @@ app.get('/api/calendar/month', (req, res) => {
     const dayTeamDuties = (db.team_duties && db.team_duties[dateStr]) || {};
     leaders.forEach((leader, idx) => {
       const lDuty = dayTeamDuties[leader.id];
-      if (lDuty) {
+      if (lDuty && (lDuty.isLeave || lDuty.branchName)) {
         const theme = leader.colorTheme || colorThemes[idx % colorThemes.length];
         const shortName = leader.name.split(' ')[0];
         roster.push({
@@ -975,7 +975,7 @@ app.delete('/api/team-leaders/:id', (req, res) => {
 // บันทึกตารางงาน / วันลา ของหัวหน้าทีม
 app.post('/api/team-duty', (req, res) => {
   const db = readDB();
-  const { leaderId, date, branchId, branchName, isLeave, leaveType, note } = req.body;
+  const { leaderId, date, branchId, branchName, isLeave, leaveType, note, isClear } = req.body;
   const requestingUserId = req.headers['x-user-id'] || req.body.userId;
   const isHost = isHostUser(req, db.settings);
 
@@ -997,10 +997,20 @@ app.post('/api/team-duty', (req, res) => {
   db.team_duties = db.team_duties || {};
   db.team_duties[date] = db.team_duties[date] || {};
 
+  // If user requests to clear / reset duty (ว่างปกติ / ไม่ระบุสถานที่)
+  if (isClear || branchId === 'none' || branchId === 'clear') {
+    delete db.team_duties[date][leaderId];
+    writeDB(db);
+    return res.json({
+      message: `ล้างสถานะของ ${leader.name} เรียบร้อยแล้ว (กลับเป็นสถานะว่างปกติ ไม่ระบุสถานที่)`,
+      duty: null
+    });
+  }
+
   db.team_duties[date][leaderId] = {
     leaderName: leader.name,
     branchId: isLeave ? null : (branchId || null),
-    branchName: isLeave ? null : (branchName || 'สำนักงานใหญ่'),
+    branchName: isLeave ? null : (branchName || null),
     isLeave: !!isLeave,
     leaveType: isLeave ? (leaveType || 'ลาพักร้อน') : null,
     note: note ? note.trim() : '',
@@ -1012,7 +1022,7 @@ app.post('/api/team-duty', (req, res) => {
   res.json({
     message: isLeave 
       ? `บันทึกวัน ${leaveType || 'ลาพักร้อน'} ของ ${leader.name} เรียบร้อยแล้ว` 
-      : `บันทึกสถานที่: ${branchName} ของ ${leader.name} เรียบร้อยแล้ว`,
+      : `บันทึกสถานะของ ${leader.name} เรียบร้อยแล้ว`,
     duty: db.team_duties[date][leaderId]
   });
 });

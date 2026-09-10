@@ -436,7 +436,11 @@ class MeetingQueueApp {
           const themeClass = `badge-person-${r.colorTheme || 'indigo'}`;
           let text = '';
           if (r.isLeave) {
-            text = `🏖️ ลา`;
+            if (r.leaveType === 'On Sales') {
+              text = r.role === 'host' ? '💼 On Sales' : `${r.shortName}: Sales`;
+            } else {
+              text = '🏖️ ลา';
+            }
           } else if (r.role === 'host') {
             if (r.isHalfDay && !r.branchName) {
               text = `⏰ ครึ่งวัน`;
@@ -621,9 +625,15 @@ class MeetingQueueApp {
       if (data.duty) {
         dutyBanner.classList.remove('hidden');
         if (data.duty.isLeave) {
-          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-rose-50 border-rose-200 text-rose-900';
-          dutyTitle.textContent = `🏖️ เจ้าของคิว (Host) ลา: ${data.duty.leaveType || 'ลาพักร้อน'}`;
-          dutyDesc.textContent = data.duty.note || 'ปิดรับคิวการประชุม';
+          if (data.duty.leaveType === 'On Sales') {
+            dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-amber-50 border-amber-300 text-amber-900';
+            dutyTitle.textContent = '💼 เจ้าของคิว (Host): On Sales';
+            dutyDesc.textContent = data.duty.note || 'ออกพบลูกค้า / ขายงานภายนอก (ปิดรับคิวการประชุม)';
+          } else {
+            dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-rose-50 border-rose-200 text-rose-900';
+            dutyTitle.textContent = `🏖️ เจ้าของคิว (Host) ลา: ${data.duty.leaveType || 'ลาพักร้อน'}`;
+            dutyDesc.textContent = data.duty.note || 'ปิดรับคิวการประชุม';
+          }
         } else if (data.duty.isHalfDay && !data.duty.branchName) {
           dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-amber-50 border-amber-200 text-amber-900';
           dutyTitle.textContent = '⏰ ปฏิบัติงานครึ่งวัน (08:00 - 12:00 น.)';
@@ -649,6 +659,10 @@ class MeetingQueueApp {
       leaderSelect.innerHTML = '';
       const leaderBranchSelect = document.getElementById('inlineLeaderBranchSelect');
       leaderBranchSelect.innerHTML = '';
+      const optNoneLeader = document.createElement('option');
+      optNoneLeader.value = 'none';
+      optNoneLeader.textContent = '🔘 ไม่ระบุสถานที่ (ทำงานปกติ / แสดงตารางว่าง)';
+      leaderBranchSelect.appendChild(optNoneLeader);
       this.branches.forEach(b => {
         const opt = document.createElement('option');
         opt.value = b.id;
@@ -699,12 +713,18 @@ class MeetingQueueApp {
           let statusBadge = '';
           if (tl.duty) {
             if (tl.duty.isLeave) {
-              statusBadge = `<span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏖️ ${tl.duty.leaveType || 'ลาพักร้อน'}</span>`;
+              if (tl.duty.leaveType === 'On Sales') {
+                statusBadge = `<span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-md text-[10px]">💼 On Sales</span>`;
+              } else {
+                statusBadge = `<span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏖️ ${tl.duty.leaveType || 'ลาพักร้อน'}</span>`;
+              }
+            } else if (tl.duty.branchName) {
+              statusBadge = `<span class="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏢 ${tl.duty.branchName}</span>`;
             } else {
-              statusBadge = `<span class="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏢 ${tl.duty.branchName || 'สำนักงานใหญ่'}</span>`;
+              statusBadge = `<span class="bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-md text-[10px]">🏢 ปฏิบัติงานปกติ (ว่าง)</span>`;
             }
           } else {
-            statusBadge = `<span class="bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-md text-[10px]">🏢 สำนักงานใหญ่ (ปกติ)</span>`;
+            statusBadge = `<span class="bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-md text-[10px]">🏢 ปฏิบัติงานปกติ (ว่าง)</span>`;
           }
 
           const isMe = (this.currentUser.id === tl.lineUserId || (this.currentUser.leaderId && this.currentUser.leaderId === tl.leaderId));
@@ -934,12 +954,16 @@ class MeetingQueueApp {
         document.getElementById('inlineLeaderLeaveTypeSelect').value = tl.duty.leaveType || 'ลาพักร้อน';
       } else {
         this.setInlineLeaderDutyMode('work');
-        if (tl.duty.branchId) document.getElementById('inlineLeaderBranchSelect').value = tl.duty.branchId;
+        if (tl.duty.branchId) {
+          document.getElementById('inlineLeaderBranchSelect').value = tl.duty.branchId;
+        } else {
+          document.getElementById('inlineLeaderBranchSelect').value = 'none';
+        }
       }
       document.getElementById('inlineLeaderNoteInput').value = tl.duty.note || '';
     } else {
       this.setInlineLeaderDutyMode('work');
-      if (this.branches.length > 0) document.getElementById('inlineLeaderBranchSelect').value = this.branches[0].id;
+      document.getElementById('inlineLeaderBranchSelect').value = 'none';
       document.getElementById('inlineLeaderNoteInput').value = '';
     }
   }
@@ -1077,10 +1101,20 @@ class MeetingQueueApp {
       payload.leaveType = document.getElementById('inlineLeaderLeaveTypeSelect').value;
     } else {
       const branchId = document.getElementById('inlineLeaderBranchSelect').value;
-      const bObj = this.branches.find(b => b.id === branchId);
-      payload.isLeave = false;
-      payload.branchId = branchId;
-      payload.branchName = bObj ? bObj.name : 'สำนักงานใหญ่';
+      if (branchId === 'none' || branchId === 'clear') {
+        if (!note) {
+          payload.isClear = true;
+        } else {
+          payload.isLeave = false;
+          payload.branchId = null;
+          payload.branchName = null;
+        }
+      } else {
+        const bObj = this.branches.find(b => b.id === branchId);
+        payload.isLeave = false;
+        payload.branchId = branchId;
+        payload.branchName = bObj ? bObj.name : 'สำนักงานใหญ่';
+      }
     }
 
     try {
@@ -1098,6 +1132,40 @@ class MeetingQueueApp {
       if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกสถานะได้');
 
       this.showToast('success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async clearInlineLeaderDuty() {
+    if (!this.selectedDate) return;
+    const leaderId = document.getElementById('inlineLeaderSelect').value;
+    if (!leaderId) {
+      this.showToast('error', 'กรุณาเลือกหัวหน้าทีม');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/team-duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({
+          leaderId,
+          date: this.selectedDate,
+          isClear: true
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถล้างสถานะได้');
+
+      this.showToast('success', data.message || 'รีเซ็ตสถานะเป็นวันว่างปกติเรียบร้อยแล้ว');
       await this.openDayModal(this.selectedDate);
       await this.loadMonthCalendar();
     } catch (err) {
