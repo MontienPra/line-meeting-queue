@@ -1,0 +1,340 @@
+{
+  "settings": {
+    "hostName": "Gas",
+    "adminPin": "1234",
+    "adminUserId": "U0547143d0738f92fe64497e5f49dcefe",
+    "slotDurationMinutes": 60,
+    "workStartHour": 8,
+    "workEndHour": 17,
+    "lunchStartHour": 12,
+    "lunchEndHour": 13,
+    "weekendOpen": false,
+    "liffId": "2011528927-vtciodOy",
+    "defaultBranchId": "br-1788970617847"
+  },
+  "branches": [
+    {
+      "id": "wfh",
+      "name": "WFH / ออนไลน์",
+      "icon": "laptop",
+      "address": "Google Meet / LINE Video Call",
+      "badgeClass": "bg-purple-100 text-purple-700 border-purple-200"
+    },
+    {
+      "id": "br-1788970617847",
+      "name": "NKP",
+      "address": "นครปฐม",
+      "icon": "building-2",
+      "badgeClass": "bg-teal-100 text-teal-700 border-teal-200"
+    },
+    {
+      "id": "br-1788970642346",
+      "name": "SAM",
+      "address": "สมุทรสาคร",
+      "icon": "building-2",
+      "badgeClass": "bg-teal-100 text-teal-700 border-teal-200"
+    },
+    {
+      "id": "br-1788970665714",
+      "name": "สำนักงานใหญ่",
+      "address": "ประเวศ",
+      "icon": "building-2",
+      "badgeClass": "bg-teal-100 text-teal-700 border-teal-200"
+    }
+  ],
+  "event_types": [
+    "1-on-1 ปรึกษางาน",
+    "ประชุมติดตามงานโครงการ (Project Sync)",
+    "ตรวจแบบและขออนุมัติงาน",
+    "สัมภาษณ์ / ประเมินผลงาน",
+    "นัดคุยงานด่วน",
+    "อื่นๆ"
+  ],
+  "team_leaders": [
+    {
+      "id": "tl-1788968705188",
+      "name": "Moo",
+      "department": "Unit",
+      "lineUserId": "U06bba4ee6a033865cc8fdd9676d142a0",
+      "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=Moo",
+      "defaultBranchId": "br-1788970642346"
+    },
+    {
+      "id": "tl-1788968718995",
+      "name": "GOT",
+      "department": "UNIT",
+      "lineUserId": "U5825687603bdd294f6e82e830030cbc7",
+      "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=GOT",
+      "defaultBranchId": "br-1788970617847"
+    },
+    {
+      "id": "tl-1788968731923",
+      "name": "NC",
+      "department": "UNIT",
+      "lineUserId": "U5825687603bdd294f6e82e830030cbc7",
+      "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=NC",
+      "defaultBranchId": "br-1788970642346"
+    }
+  ],
+  "team_duties": {
+    "2026-09-10": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "bangna",
+        "branchName": "สาขาบางนา",
+        "isLeave": false,
+        "note": "ตรวจงานระบบสาขาบางนา"
+      },
+      "tl-wipha": {
+        "leaderName": "วิภา บริหาร (หัวหน้าจัดซื้อ)",
+        "branchId": null,
+        "branchName": null,
+        "isLeave": true,
+        "leaveType": "ลาพักร้อน",
+        "note": "ลาพักร้อนประจำปี"
+      }
+    },
+    "2026-09-18": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "br-1788945845792",
+        "branchName": "สาขานครปฐม",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T14:59:32.652Z"
+      }
+    },
+    "2026-09-26": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "br-1788945845792",
+        "branchName": "สาขานครปฐม",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:05:50.709Z"
+      }
+    },
+    "2026-09-25": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "br-1788945845792",
+        "branchName": "สาขานครปฐม",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:06:11.914Z"
+      }
+    },
+    "2026-09-15": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "br-1788945845792",
+        "branchName": "สาขานครปฐม",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:17:05.271Z"
+      },
+      "tl-1788968705188": {
+        "leaderName": "Moo",
+        "branchId": "br-1788970617847",
+        "branchName": "NKP",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "สาขาประจำปกติ",
+        "updatedAt": "2026-09-09T18:02:32.132Z"
+      }
+    },
+    "2026-09-07": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "br-1788945845792",
+        "branchName": "สาขานครปฐม",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:17:38.250Z"
+      }
+    },
+    "2026-09-30": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "chonburi",
+        "branchName": "สาขาชลบุรี",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:18:40.682Z"
+      }
+    },
+    "2026-09-22": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม IT (Lead)",
+        "branchId": "rayong",
+        "branchName": "สาขาระยอง",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "ไปตรวจระบบ IT โรงงานระยอง",
+        "updatedAt": "2026-09-09T17:28:47.760Z"
+      },
+      "tl-1788968705188": {
+        "leaderName": "Moo",
+        "branchId": "rayong",
+        "branchName": "สาขาระยอง",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "ไปตรวจงานสาขาระยอง",
+        "updatedAt": "2026-09-09T17:54:48.653Z"
+      }
+    },
+    "2026-09-08": {
+      "tl-somsak": {
+        "leaderName": "สมศักดิ์ นำทีม (หัวหน้า IT)",
+        "branchId": "hq",
+        "branchName": "สำนักงานใหญ่",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "",
+        "updatedAt": "2026-09-09T15:42:00.169Z"
+      }
+    },
+    "2026-09-14": {
+      "tl-1788968718995": {
+        "leaderName": "GOT",
+        "branchId": "br-1788970642346",
+        "branchName": "SAM",
+        "isLeave": false,
+        "leaveType": null,
+        "note": "สาขาประจำปกติ",
+        "updatedAt": "2026-09-09T16:39:19.881Z"
+      }
+    }
+  },
+  "daily_duties": {
+    "2026-09-10": {
+      "branchId": "wfh",
+      "branchName": "WFH / ออนไลน์",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "",
+      "updatedAt": "2026-09-09T16:24:37.210Z"
+    },
+    "2026-09-11": {
+      "branchId": "br-1788945845792",
+      "branchName": "สาขานครปฐม",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "",
+      "updatedAt": "2026-09-09T09:26:06.264Z"
+    },
+    "2026-09-12": {
+      "branchId": "wfh",
+      "branchName": "WFH / ออนไลน์",
+      "isLeave": false,
+      "note": "ประชุมออนไลน์เท่านั้น"
+    },
+    "2026-09-16": {
+      "branchId": null,
+      "branchName": null,
+      "isLeave": true,
+      "leaveType": "ลาพักร้อน",
+      "note": "ลาพักร้อนประจำปี (งดรับคิวทุกกรณี)",
+      "updatedAt": "2026-09-09T15:52:17.695Z"
+    },
+    "2026-09-18": {
+      "branchId": "bangna",
+      "branchName": "สาขาบางนา",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "ตรวจเยี่ยมสาขาบางนา",
+      "updatedAt": "2026-09-09T17:54:48.627Z"
+    },
+    "2026-09-09": {
+      "branchId": "br-1788970642346",
+      "branchName": "SAM",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "",
+      "updatedAt": "2026-09-09T16:19:33.368Z"
+    },
+    "2026-09-07": {
+      "branchId": "br-1788970617847",
+      "branchName": "NKP",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "",
+      "updatedAt": "2026-09-09T16:18:35.722Z"
+    },
+    "2026-09-08": {
+      "branchId": "br-1788970617847",
+      "branchName": "NKP",
+      "isLeave": false,
+      "leaveType": null,
+      "note": "สาขาประจำปกติ",
+      "updatedAt": "2026-09-09T16:19:17.826Z"
+    }
+  },
+  "blocked_slots": [
+    {
+      "id": "blk-sample-1",
+      "date": "2026-09-10",
+      "startTime": "14:00",
+      "endTime": "15:00",
+      "reason": "ติดประชุมผู้บริหารระดับสูง",
+      "isFullDay": false
+    },
+    {
+      "id": "blk-1788967191984",
+      "date": "2026-09-13",
+      "startTime": "00:00",
+      "endTime": "23:59",
+      "reason": "Host ปิดรับคิวตลอดวัน",
+      "isFullDay": true,
+      "createdAt": "2026-09-09T15:19:51.985Z"
+    },
+    {
+      "id": "blk-1788970962929",
+      "date": "2026-09-12",
+      "startTime": "00:00",
+      "endTime": "23:59",
+      "reason": "Host ปิดรับคิวตลอดวัน",
+      "isFullDay": true,
+      "createdAt": "2026-09-09T16:22:42.929Z"
+    },
+    {
+      "id": "blk-1788972324181",
+      "date": "2026-09-11",
+      "startTime": "00:00",
+      "endTime": "23:59",
+      "reason": "Host ปิดรับคิวตลอดวัน",
+      "isFullDay": true,
+      "createdAt": "2026-09-09T16:45:24.181Z"
+    }
+  ],
+  "bookings": [],
+  "registered_users": [
+    {
+      "userId": "U0547143d0738f92fe64497e5f49dcefe",
+      "displayName": "Gas",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=Gas",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    },
+    {
+      "userId": "U06bba4ee6a033865cc8fdd9676d142a0",
+      "displayName": "Moo",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=Moo",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    },
+    {
+      "userId": "U5825687603bdd294f6e82e830030cbc7",
+      "displayName": "GOT / NC",
+      "pictureUrl": "https://api.dicebear.com/7.x/bottts/svg?seed=GOT",
+      "firstSeenAt": "2026-09-09T00:00:00.000Z",
+      "lastActiveAt": "2026-09-10T11:00:00.000Z"
+    }
+  ]
+}
