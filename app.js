@@ -183,6 +183,11 @@ class MeetingQueueApp {
   }
 
   switchUser(userParam) {
+    if (this.currentUser?.isLiffUser) {
+      this.showToast('warning', '⚠️ บัญชี LINE จริงไม่สามารถสลับบทบาทได้');
+      return;
+    }
+
     if (typeof userParam === 'string' && MOCK_USERS[userParam]) {
       this.currentUser = { ...MOCK_USERS[userParam] };
       if (userParam === 'host' && this.monthData?.hostName) {
@@ -203,10 +208,15 @@ class MeetingQueueApp {
   renderUserDropdown(teamLeaders, hostName) {
     this.teamLeaders = teamLeaders || [];
 
+    // On real LINE LIFF, don't populate switcher buttons
+    if (this.currentUser?.isLiffUser) {
+      return;
+    }
+
     // 1. Update Host button in dropdown
     const hostBtnText = document.getElementById('userDropdownHostName');
     if (hostBtnText && hostName) {
-      hostBtnText.textContent = `👑 เจ้าของคิว (Host / ${hostName})`;
+      hostBtnText.textContent = `👑 สลับเป็นเจ้าของคิว (Host / ${hostName})`;
     }
 
     // 2. Populate dynamic team leaders list in dropdown
@@ -251,6 +261,28 @@ class MeetingQueueApp {
   updateUserUI() {
     document.getElementById('userName').textContent = this.currentUser.name;
     document.getElementById('userAvatar').src = this.currentUser.picture;
+
+    // Dropdown profile card elements
+    const dropdownAvatar = document.getElementById('dropdownUserAvatar');
+    const dropdownName = document.getElementById('dropdownUserName');
+    const roleBadge = document.getElementById('userRoleBadge');
+    const statusText = document.getElementById('dropdownUserStatusText');
+
+    if (dropdownAvatar) dropdownAvatar.src = this.currentUser.picture;
+    if (dropdownName) dropdownName.textContent = this.currentUser.name;
+
+    if (roleBadge) {
+      if (this.currentUser.role === 'host') {
+        roleBadge.className = 'text-[9px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 border border-amber-200 shrink-0';
+        roleBadge.textContent = '👑 เจ้าของคิว (Host)';
+      } else if (this.currentUser.role === 'team_leader') {
+        roleBadge.className = 'text-[9px] px-2 py-0.5 rounded-full font-bold bg-teal-100 text-teal-800 border border-teal-200 shrink-0';
+        roleBadge.textContent = '👤 หัวหน้าทีม';
+      } else {
+        roleBadge.className = 'text-[9px] px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200 shrink-0';
+        roleBadge.textContent = '🟢 พนักงาน';
+      }
+    }
 
     const hostTabBtn = document.getElementById('tabHostBtn');
     const tabHostBtnText = document.getElementById('tabHostBtnText');
@@ -306,22 +338,31 @@ class MeetingQueueApp {
       if (hostAdminActionBtns) hostAdminActionBtns.classList.remove('hidden');
     }
 
-    const liveBadge = document.getElementById('userLiveBadge');
-    const lineIdSection = document.getElementById('userLineIdSection');
-    const lineIdDisplay = document.getElementById('userLineIdDisplay');
-
+    const isLive = Boolean(this.currentUser.isLiffUser || (typeof liff !== 'undefined' && liff.isLoggedIn && liff.isLoggedIn()));
     const devSection = document.getElementById('devTestAccountsSection');
+    const leadersSection = document.getElementById('userDropdownLeadersSection');
+    const hostSection = document.getElementById('userDropdownHostSection');
+    const liffConfigSection = document.getElementById('userDropdownLiffConfigSection');
 
-    if (this.currentUser.isLiffUser || (this.currentUser.id && this.currentUser.id.startsWith('U0547143d0738f92fe64497e5f49dcefe'))) {
-      if (liveBadge) liveBadge.classList.remove('hidden');
-      if (lineIdSection) lineIdSection.classList.remove('hidden');
-      if (lineIdDisplay) lineIdDisplay.textContent = `LINE: ${this.currentUser.id}`;
-      // On real mobile LINE, keep the interface clean without mock test accounts
-      if (this.currentUser.isLiffUser && devSection) {
-        devSection.classList.add('hidden');
-      }
+    if (isLive) {
+      if (devSection) devSection.classList.add('hidden');
+      if (leadersSection) leadersSection.classList.add('hidden');
+      if (hostSection) hostSection.classList.add('hidden');
+      if (liffConfigSection) liffConfigSection.classList.add('hidden');
+      if (statusText) statusText.textContent = '🟢 เข้าสู่ระบบผ่าน LINE สำเร็จ';
     } else {
       if (devSection) devSection.classList.remove('hidden');
+      if (leadersSection) leadersSection.classList.remove('hidden');
+      if (hostSection) hostSection.classList.remove('hidden');
+      if (liffConfigSection) liffConfigSection.classList.remove('hidden');
+      if (statusText) statusText.textContent = 'โหมดจำลอง (Dev Browser)';
+    }
+
+    const lineIdSection = document.getElementById('userLineIdSection');
+    const lineIdDisplay = document.getElementById('userLineIdDisplay');
+    if (this.currentUser?.id) {
+      if (lineIdSection) lineIdSection.classList.remove('hidden');
+      if (lineIdDisplay) lineIdDisplay.textContent = this.currentUser.id;
     }
   }
 
