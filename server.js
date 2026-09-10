@@ -30,10 +30,12 @@ function readDB() {
       return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [] };
     }
     const data = fs.readFileSync(DB_FILE, 'utf8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!parsed.registered_users) parsed.registered_users = [];
+    return parsed;
   } catch (err) {
     console.error('Error reading database.json:', err);
-    return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [] };
+    return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [], registered_users: [] };
   }
 }
 
@@ -843,6 +845,32 @@ app.post('/api/settings', (req, res) => {
   res.json({ message: 'บันทึกการตั้งค่าเรียบร้อยแล้ว', settings: db.settings });
 });
 
+// 10.1 Backup & Restore Database
+app.get('/api/admin/export-database', (req, res) => {
+  const db = readDB();
+  if (!isHostUser(req, db.settings)) {
+    return res.status(403).json({ error: 'เฉพาะ Host เท่านั้นที่สามารถสำรองข้อมูลได้' });
+  }
+  res.setHeader('Content-Disposition', 'attachment; filename="database.json"');
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(db, null, 2));
+});
+
+app.post('/api/admin/import-database', (req, res) => {
+  const db = readDB();
+  if (!isHostUser(req, db.settings)) {
+    return res.status(403).json({ error: 'เฉพาะ Host เท่านั้นที่สามารถกู้คืนข้อมูลได้' });
+  }
+
+  const importedData = req.body;
+  if (!importedData || typeof importedData !== 'object' || !importedData.settings) {
+    return res.status(400).json({ error: 'ไฟล์ฐานข้อมูลไม่ถูกต้อง' });
+  }
+
+  writeDB(importedData);
+  res.json({ message: 'กู้คืนฐานข้อมูลเรียบร้อยแล้ว' });
+});
+
 // 11. Branch Management APIs (เพิ่ม / แก้ไข / ลบ รายชื่อสาขา)
 app.get('/api/branches', (req, res) => {
   const db = readDB();
@@ -933,12 +961,15 @@ app.post('/api/team-leaders', (req, res) => {
   }
 
   const id = 'tl-' + Date.now();
+  const matchedUser = (db.registered_users || []).find(u => u.userId === lineUserId);
+  const picture = (matchedUser && matchedUser.pictureUrl) ? matchedUser.pictureUrl : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+
   const newLeader = {
     id,
     name: name.trim(),
     department: department ? department.trim() : 'หัวหน้าทีม',
     lineUserId: lineUserId ? lineUserId.trim() : `U_LEAD_${Date.now()}`,
-    picture: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+    picture,
     defaultBranchId: defaultBranchId || (db.branches && db.branches[0] ? db.branches[0].id : null)
   };
 
@@ -990,6 +1021,39 @@ app.delete('/api/team-leaders/:id', (req, res) => {
 
   writeDB(db);
   res.json({ message: 'ลบรายชื่อหัวหน้าทีมเรียบร้อยแล้ว' });
+});
+
+// 11.1 User Check-in & Member Directory (บันทึกรายชื่อสมาชิก LINE ที่เคยเข้าใช้งาน)
+app.post('/api/users/checkin', (req, res) => {
+  const db = readDB();
+  const { userId, displayName, pictureUrl } = req.body;
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+
+  db.registered_users = db.registered_users || [];
+  const existingIdx = db.registered_users.findIndex(u => u.userId === userId);
+  const now = new Date().toISOString();
+
+  if (existingIdx !== -1) {
+    if (displayName) db.registered_users[existingIdx].displayName = displayName;
+    if (pictureUrl) db.registered_users[existingIdx].pictureUrl = pictureUrl;
+    db.registered_users[existingIdx].lastActiveAt = now;
+  } else {
+    db.registered_users.push({
+      userId,
+      displayName: displayName || 'LINE Member',
+      pictureUrl: pictureUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${userId}`,
+      firstSeenAt: now,
+      lastActiveAt: now
+    });
+  }
+
+  writeDB(db);
+  res.json({ success: true });
+});
+
+app.get('/api/users', (req, res) => {
+  const db = readDB();
+  res.json({ users: db.registered_users || [] });
 });
 
 // บันทึกตารางงาน / วันลา ของหัวหน้าทีม
