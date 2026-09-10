@@ -105,6 +105,21 @@ function isHostUser(req, settings) {
   return false;
 }
 
+function isLeaderUser(req, db) {
+  const userId = req.headers['x-user-id'] || req.query.userId || req.body.userId;
+  const role = req.headers['x-role'] || req.query.role || req.body.role;
+  if (role === 'team_leader') return true;
+  if (userId) {
+    const isMatched = (db.team_leaders || []).some(l => l.lineUserId === userId || l.id === userId);
+    if (isMatched) return true;
+  }
+  return false;
+}
+
+function isHostOrLeaderUser(req, db) {
+  return isHostUser(req, db.settings) || isLeaderUser(req, db);
+}
+
 // -------------------------------------------------------------
 // Calendar Status Calculation Logic
 // 🟢 Green = ว่าง / ยังไม่ลงคิว
@@ -148,9 +163,9 @@ function calculateDayStatus(dateStr, db, currentUserId) {
     };
   }
 
-  // Check Full-day Block by Host
+  // Check Full-day Block by Host (if half-day is set, full-day block is automatically bypassed/unlocked)
   const fullDayBlock = (blocked_slots || []).find(b => b.date === dateStr && b.isFullDay);
-  if (fullDayBlock) {
+  if (fullDayBlock && !(duty && duty.isHalfDay)) {
     return {
       status: 'grey',
       statusText: fullDayBlock.reason || 'เจ้าของคิวปิดรับคิวในวันนี้',
@@ -367,7 +382,7 @@ app.get('/api/calendar/day', (req, res) => {
   const slots = allSlots.map(slot => {
     // Check if blocked by host
     const blockMatch = dayBlocks.find(b => {
-      if (b.isFullDay) return true;
+      if (b.isFullDay) return (duty && duty.isHalfDay) ? false : true;
       return (slot.startTime < b.endTime && slot.endTime > b.startTime);
     });
 
@@ -410,7 +425,7 @@ app.get('/api/calendar/day', (req, res) => {
     };
   });
 
-  const fullDayBlock = (db.blocked_slots || []).find(b => b.date === date && b.isFullDay);
+  const fullDayBlock = (duty && duty.isHalfDay) ? null : (db.blocked_slots || []).find(b => b.date === date && b.isFullDay);
 
   // Host Duty fallback (ใช้ defaultBranchId ของ Host หากไม่มี duty เฉพาะวัน)
   const hostDefaultBranch = (db.branches || []).find(b => b.id === db.settings.defaultBranchId) || (db.branches && db.branches[0]);
@@ -606,11 +621,11 @@ app.get('/api/my-bookings', (req, res) => {
   res.json({ bookings: myBookings });
 });
 
-// 6. Get All Bookings (For Host / Admin view)
+// 6. Get All Bookings (For Host & Team Leaders)
 app.get('/api/host/bookings', (req, res) => {
   const db = readDB();
-  if (!isHostUser(req, db.settings)) {
-    return res.status(403).json({ error: 'เฉพาะ Host / ผู้ดูแลระบบ เท่านั้นที่สามารถดูรายชื่อคิวทั้งหมดได้' });
+  if (!isHostOrLeaderUser(req, db)) {
+    return res.status(403).json({ error: 'เฉพาะ Host หรือ หัวหน้าทีม เท่านั้นที่สามารถดูรายชื่อคิวทั้งหมดได้' });
   }
 
   const activeBookings = (db.bookings || [])
@@ -664,13 +679,18 @@ app.post('/api/host/duty', (req, res) => {
     });
   }
 
+  if (isHalfDay) {
+    // Automatically UNLOCK and clear any full-day block on this date
+    db.blocked_slots = (db.blocked_slots || []).filter(b => !(b.date === date && b.isFullDay));
+  }
+
   db.daily_duties[date] = {
     branchId: branchId || null,
     branchName: branchName || null,
     isWorkingDay: true,
     isHalfDay: !!isHalfDay,
-    isLeave: !!isLeave,
-    leaveType: leaveType || (isLeave ? 'ลาพักร้อน' : null),
+    isLeave: isHalfDay ? false : !!isLeave,
+    leaveType: isHalfDay ? null : (leaveType || (isLeave ? 'ลาพักร้อน' : null)),
     note: note || '',
     updatedAt: new Date().toISOString()
   };
@@ -678,10 +698,10 @@ app.post('/api/host/duty', (req, res) => {
   writeDB(db);
 
   let message = 'อัปเดตสถานะของ Host เรียบร้อยแล้ว';
-  if (isLeave) {
+  if (isHalfDay) {
+    message = 'เปิดรับคิวทำงานครึ่งวัน (08:00 - 12:00 น.) และปลดล็อกคิวอัตโนมัติเรียบร้อยแล้ว';
+  } else if (isLeave) {
     message = `บันทึกวัน ${leaveType || 'ลาพักร้อน'} เรียบร้อยแล้ว (ปิดรับคิวอัตโนมัติ)`;
-  } else if (isHalfDay) {
-    message = `เปิดรับคิวทำงานครึ่งวัน (09:00 - 12:00 น.) เรียบร้อยแล้ว`;
   } else if (branchName) {
     message = `อัปเดตสถานที่ประจำวัน: ${branchName} เรียบร้อยแล้ว`;
   } else {

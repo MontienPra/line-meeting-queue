@@ -239,8 +239,53 @@ class MeetingQueueApp {
     document.getElementById('userAvatar').src = this.currentUser.picture;
 
     const hostTabBtn = document.getElementById('tabHostBtn');
+    const tabHostBtnText = document.getElementById('tabHostBtnText');
+    const hostAdminSettingsGrid = document.getElementById('hostAdminSettingsGrid');
+    const hostClearTestBookingsBtn = document.getElementById('hostClearTestBookingsBtn');
+    const hostHeaderBanner = document.getElementById('hostHeaderBanner');
+    const hostRoleBadge = document.getElementById('hostRoleBadge');
+    const hostPanelTitle = document.getElementById('hostPanelTitle');
+    const hostPanelDesc = document.getElementById('hostPanelDesc');
+
     if (this.currentUser.role === 'host') {
-      hostTabBtn.classList.remove('opacity-50');
+      if (hostTabBtn) hostTabBtn.classList.remove('opacity-50');
+      if (tabHostBtnText) tabHostBtnText.textContent = 'จัดการระบบ (Host)';
+      if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.remove('hidden');
+      if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.remove('hidden');
+      if (hostHeaderBanner) {
+        hostHeaderBanner.className = 'bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-md';
+      }
+      if (hostRoleBadge) {
+        hostRoleBadge.textContent = '👑 แผงควบคุมผู้ดูแลระบบ (Host Control)';
+        hostRoleBadge.className = 'inline-block px-2.5 py-0.5 bg-white/20 rounded-full text-[11px] font-bold uppercase tracking-wider mb-1 text-white';
+      }
+      if (hostPanelTitle) hostPanelTitle.textContent = 'จัดการระบบและรายชื่อคิวทั้งหมด';
+      if (hostPanelDesc) {
+        hostPanelDesc.className = 'text-xs text-amber-100 mt-1';
+        hostPanelDesc.innerHTML = '✨ <strong>การจัดการประจำวัน:</strong> คุณและหัวหน้าทีมสามารถกดที่วันที่ในหน้าปฏิทินเพื่อเปลี่ยนสาขา แจ้งวันลา หรือบล็อก/ปลดล็อกคิวได้ทันที';
+      }
+    } else if (this.currentUser.role === 'team_leader') {
+      if (hostTabBtn) hostTabBtn.classList.remove('opacity-50');
+      if (tabHostBtnText) tabHostBtnText.textContent = 'คิวทั้งหมด (ทีม)';
+      if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.add('hidden');
+      if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.add('hidden');
+      if (hostHeaderBanner) {
+        hostHeaderBanner.className = 'bg-gradient-to-r from-teal-600 via-cyan-700 to-teal-800 rounded-2xl p-4 text-white shadow-md';
+      }
+      if (hostRoleBadge) {
+        hostRoleBadge.textContent = '👤 สิทธิ์หัวหน้าทีม (Team Leader)';
+        hostRoleBadge.className = 'inline-block px-2.5 py-0.5 bg-white/20 rounded-full text-[11px] font-bold uppercase tracking-wider mb-1 text-teal-100';
+      }
+      if (hostPanelTitle) hostPanelTitle.textContent = 'รายชื่อคิวการประชุมทั้งหมด (มุมมองหัวหน้าทีม)';
+      if (hostPanelDesc) {
+        hostPanelDesc.className = 'text-xs text-teal-100 mt-1';
+        hostPanelDesc.innerHTML = '👁️ <strong>มุมมองหัวหน้าทีม:</strong> ตรวจสอบรายชื่อพนักงานที่ลงคิวทั้งหมดได้ (ดูอย่างเดียว ไม่สามารถแก้ไขหรือยกเลิกคิวได้)';
+      }
+    } else {
+      if (hostTabBtn) hostTabBtn.classList.add('opacity-50');
+      if (tabHostBtnText) tabHostBtnText.textContent = 'จัดการคิว (Host)';
+      if (hostAdminSettingsGrid) hostAdminSettingsGrid.classList.remove('hidden');
+      if (hostClearTestBookingsBtn) hostClearTestBookingsBtn.classList.remove('hidden');
     }
 
     const liveBadge = document.getElementById('userLiveBadge');
@@ -279,6 +324,11 @@ class MeetingQueueApp {
   }
 
   switchTab(tabName) {
+    if (tabName === 'host' && this.currentUser.role !== 'host' && this.currentUser.role !== 'team_leader') {
+      this.showToast('info', '🔒 เมนูนี้สำหรับ Host และหัวหน้าทีมเท่านั้น');
+      return;
+    }
+
     const tabs = ['calendar', 'my-bookings', 'host'];
     tabs.forEach(t => {
       const section = document.getElementById(t === 'calendar' ? 'tabCalendar' : t === 'my-bookings' ? 'tabMyBookings' : 'tabHost');
@@ -587,6 +637,13 @@ class MeetingQueueApp {
         });
 
         const halfDayCheckbox = document.getElementById('inlineHostHalfDay');
+        if (halfDayCheckbox) {
+          halfDayCheckbox.onchange = () => {
+            if (halfDayCheckbox.checked) {
+              this.setInlineHostDutyMode('work');
+            }
+          };
+        }
 
         // Prefill Host Duty
         if (data.duty) {
@@ -974,7 +1031,19 @@ class MeetingQueueApp {
     const isHalfDay = document.getElementById('inlineHostHalfDay') ? document.getElementById('inlineHostHalfDay').checked : false;
     let payload = { date: this.selectedDate, note, isHalfDay };
 
-    if (this.inlineHostMode === 'leave') {
+    if (isHalfDay) {
+      // เมื่อเลือกทำงานครึ่งวัน ให้บังคับเปิดคิวทันที (ไม่เป็นสถานะลา)
+      payload.isLeave = false;
+      const branchId = document.getElementById('inlineHostBranchSelect').value;
+      if (branchId && branchId !== 'none' && branchId !== 'clear') {
+        const branchObj = this.branches.find(b => b.id === branchId);
+        payload.branchId = branchId;
+        payload.branchName = branchObj ? branchObj.name : 'สำนักงานใหญ่';
+      } else {
+        payload.branchId = null;
+        payload.branchName = null;
+      }
+    } else if (this.inlineHostMode === 'leave') {
       const leaveType = document.getElementById('inlineHostLeaveTypeSelect').value;
       payload.isLeave = true;
       payload.leaveType = leaveType;
@@ -1716,7 +1785,7 @@ class MeetingQueueApp {
       });
 
       if (res.status === 403) {
-        list.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">🔒 เฉพาะ Host เท่านั้นที่สามารถดูรายชื่อคิวทั้งหมดได้ (กรุณาสลับเป็น Host ที่มุมขวาบน)</div>';
+        list.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">🔒 เฉพาะ Host หรือหัวหน้าทีมเท่านั้นที่สามารถดูรายชื่อคิวได้</div>';
         countBadge.textContent = 'ล็อกสิทธิ์';
         return;
       }
@@ -1729,6 +1798,8 @@ class MeetingQueueApp {
         list.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">ยังไม่มีคิวที่ลงไว้</div>';
         return;
       }
+
+      const isHost = this.currentUser.role === 'host';
 
       list.innerHTML = '';
       bookings.forEach(b => {
@@ -1755,9 +1826,15 @@ class MeetingQueueApp {
               ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
             </div>
           </div>
-          <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
-            ยกเลิกคิวนี้
-          </button>
+          ${isHost ? `
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
+              ยกเลิกคิวนี้
+            </button>
+          ` : `
+            <span class="px-2.5 py-1 bg-slate-100 text-slate-500 rounded-xl text-[11px] font-medium self-end sm:self-center">
+              👁️ ดูอย่างเดียว
+            </span>
+          `}
         `;
         list.appendChild(item);
       });
