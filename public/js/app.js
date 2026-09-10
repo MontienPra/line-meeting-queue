@@ -1,0 +1,2379 @@
+/**
+ * LINE Meeting Queue App - Frontend Logic
+ * Supports LINE LIFF v2, 4-Status Calendar, Branch Duty & Leave, Role-based permissions
+ */
+
+const THAI_MONTHS = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+];
+
+const THAI_DAYS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+
+const MOCK_USERS = {
+  employee1: {
+    id: 'U_USER_SOMCHAI',
+    name: 'สมชาย ใจดี (ฝ่าย IT)',
+    picture: 'https://api.dicebear.com/7.x/bottts/svg?seed=Somchai',
+    role: 'employee'
+  },
+  employee2: {
+    id: 'U_USER_SOMYING',
+    name: 'สมหญิง รักเรียน (การตลาด)',
+    picture: 'https://api.dicebear.com/7.x/bottts/svg?seed=Somying',
+    role: 'employee'
+  },
+  teamLeader1: {
+    id: 'U_LEADER_SOMSAK',
+    leaderId: 'tl-somsak',
+    name: 'สมศักดิ์ นำทีม (หัวหน้า IT)',
+    picture: 'https://api.dicebear.com/7.x/bottts/svg?seed=SomsakLead',
+    role: 'team_leader'
+  },
+  host: {
+    id: 'U_ADMIN_MONTIEN',
+    name: 'คุณมณเทียร (Host/Manager)',
+    picture: 'https://api.dicebear.com/7.x/bottts/svg?seed=Montien',
+    role: 'host'
+  }
+};
+
+class MeetingQueueApp {
+  constructor() {
+    this.currentDate = new Date();
+    this.viewYear = this.currentDate.getFullYear();
+    this.viewMonth = this.currentDate.getMonth() + 1; // 1-12
+    
+    // Default user is employee1 (Dev test mode)
+    this.currentUser = JSON.parse(localStorage.getItem('liff_mock_user') || 'null') || MOCK_USERS.employee1;
+    this.liffId = localStorage.getItem('liff_app_id') || '2011528927-vtciodOy';
+
+    this.selectedDate = null;
+    this.selectedSlot = null;
+    this.branches = [];
+    this.eventTypes = [];
+    this.monthData = null;
+    this.inlineHostMode = 'work';
+    this.inlineLeaderMode = 'work';
+    this.currentDayData = null;
+
+    this.init();
+  }
+
+  async init() {
+    this.setupDropdown();
+    this.updateUserUI();
+    this.setupLiff();
+    await this.loadMonthCalendar();
+    this.loadMyBookings();
+    this.loadHostBookings();
+  }
+
+  // -------------------------------------------------------------
+  // LINE LIFF Initialization
+  // -------------------------------------------------------------
+  async setupLiff() {
+    if (!this.liffId) {
+      this.liffId = '2011528927-vtciodOy';
+    }
+
+    if (typeof liff === 'undefined') {
+      console.warn('LINE LIFF SDK not available.');
+      return;
+    }
+
+    try {
+      await liff.init({ liffId: this.liffId });
+      if (liff.isLoggedIn()) {
+        const profile = await liff.getProfile();
+
+        // Check user role from server
+        let role = 'employee';
+        let leaderId = null;
+
+        try {
+          const [resLeaders, resSettings] = await Promise.all([
+            fetch('/api/team-leaders'),
+            fetch('/api/settings')
+          ]);
+          const leadersData = await resLeaders.json();
+          const settingsData = await resSettings.json();
+
+          const adminId = settingsData.settings?.adminUserId;
+          const isHost = (adminId && adminId === profile.userId) || profile.userId === 'U0547143d0738f92fe64497e5f49dcefe' || profile.userId === 'U_ADMIN_MONTIEN';
+          const matchedLeader = (leadersData.leaders || []).find(l => l.lineUserId === profile.userId);
+
+          if (isHost) {
+            role = 'host';
+          } else if (matchedLeader) {
+            role = 'team_leader';
+            leaderId = matchedLeader.id;
+          }
+        } catch (e) {
+          console.warn('Could not verify server role:', e);
+        }
+
+        this.currentUser = {
+          id: profile.userId,
+          leaderId,
+          name: profile.displayName,
+          picture: profile.pictureUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.userId}`,
+          role,
+          isLiffUser: true
+        };
+        localStorage.setItem('liff_mock_user', JSON.stringify(this.currentUser));
+        this.updateUserUI();
+        this.showToast('success', `ยินดีต้อนรับคุณ ${profile.displayName} (${role === 'host' ? '👑 Host' : role === 'team_leader' ? '👤 หัวหน้าทีม' : 'พนักงาน'})`);
+      } else if (liff.isInClient()) {
+        liff.login();
+      }
+    } catch (err) {
+      console.error('LIFF init error:', err);
+      this.showToast('error', 'ไม่สามารถเชื่อมต่อ LINE LIFF ได้: ' + err.message);
+    }
+  }
+
+  openLiffConfigModal() {
+    document.getElementById('liffIdInput').value = this.liffId || '';
+    document.getElementById('liffConfigModal').classList.remove('hidden');
+  }
+
+  closeLiffConfigModal() {
+    document.getElementById('liffConfigModal').classList.add('hidden');
+  }
+
+  saveLiffId() {
+    const val = document.getElementById('liffIdInput').value.trim();
+    this.liffId = val;
+    localStorage.setItem('liff_app_id', val);
+    this.closeLiffConfigModal();
+    this.showToast('success', 'บันทึก LIFF ID เรียบร้อยแล้ว กำลังโหลดใหม่...');
+    setTimeout(() => location.reload(), 1000);
+  }
+
+  // -------------------------------------------------------------
+  // User Management & UI
+  // -------------------------------------------------------------
+  setupDropdown() {
+    const btn = document.getElementById('userMenuBtn');
+    const dropdown = document.getElementById('userDropdown');
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      dropdown.classList.add('hidden');
+    });
+  }
+
+  switchUser(userParam) {
+    if (typeof userParam === 'string' && MOCK_USERS[userParam]) {
+      this.currentUser = { ...MOCK_USERS[userParam] };
+      if (userParam === 'host' && this.monthData?.hostName) {
+        this.currentUser.name = `${this.monthData.hostName} (Host)`;
+      }
+    } else if (typeof userParam === 'object' && userParam !== null) {
+      this.currentUser = userParam;
+    }
+
+    localStorage.setItem('liff_mock_user', JSON.stringify(this.currentUser));
+    this.updateUserUI();
+    this.loadMonthCalendar();
+    this.loadMyBookings();
+    this.loadHostBookings();
+    this.showToast('info', `สลับเป็น: ${this.currentUser.name}`);
+  }
+
+  renderUserDropdown(teamLeaders, hostName) {
+    this.teamLeaders = teamLeaders || [];
+
+    // 1. Update Host button in dropdown
+    const hostBtnText = document.getElementById('userDropdownHostName');
+    if (hostBtnText && hostName) {
+      hostBtnText.textContent = `👑 เจ้าของคิว (Host / ${hostName})`;
+    }
+
+    // 2. Populate dynamic team leaders list in dropdown
+    const container = document.getElementById('userDropdownLeaders');
+    const countBadge = document.getElementById('userDropdownLeadersCount');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (countBadge) {
+      countBadge.textContent = `${(teamLeaders || []).length} ท่าน`;
+    }
+
+    if (!teamLeaders || teamLeaders.length === 0) {
+      container.innerHTML = '<div class="px-3 py-1 text-[11px] text-slate-400 italic">ยังไม่มีหัวหน้าทีมในระบบ</div>';
+      return;
+    }
+
+    teamLeaders.forEach(l => {
+      const btn = document.createElement('button');
+      const isCurrent = this.currentUser && (this.currentUser.leaderId === l.id || this.currentUser.id === l.lineUserId);
+      btn.className = `w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-teal-50 text-slate-700 hover:text-teal-900 transition font-medium ${isCurrent ? 'bg-teal-50 text-teal-900 font-bold' : ''}`;
+      btn.innerHTML = `
+        <div class="flex items-center space-x-2 truncate">
+          <span class="w-2 h-2 rounded-full ${isCurrent ? 'bg-emerald-500 ring-2 ring-emerald-300' : 'bg-teal-500'} shrink-0"></span>
+          <span class="truncate">👤 ${l.name} <span class="text-[10px] text-slate-400 font-normal">(${l.department || ''})</span></span>
+        </div>
+        ${isCurrent ? '<span class="text-[10px] text-teal-600 font-bold ml-1">✓</span>' : ''}
+      `;
+      btn.onclick = () => {
+        this.switchUser({
+          id: l.lineUserId || ('U_' + l.id),
+          leaderId: l.id,
+          name: `${l.name} (${l.department || 'หัวหน้าทีม'})`,
+          picture: l.picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${l.id}`,
+          role: 'team_leader'
+        });
+      };
+      container.appendChild(btn);
+    });
+  }
+
+  updateUserUI() {
+    document.getElementById('userName').textContent = this.currentUser.name;
+    document.getElementById('userAvatar').src = this.currentUser.picture;
+
+    const hostTabBtn = document.getElementById('tabHostBtn');
+    if (this.currentUser.role === 'host') {
+      hostTabBtn.classList.remove('opacity-50');
+    }
+
+    const liveBadge = document.getElementById('userLiveBadge');
+    const lineIdSection = document.getElementById('userLineIdSection');
+    const lineIdDisplay = document.getElementById('userLineIdDisplay');
+
+    const devSection = document.getElementById('devTestAccountsSection');
+
+    if (this.currentUser.isLiffUser || (this.currentUser.id && this.currentUser.id.startsWith('U0547143d0738f92fe64497e5f49dcefe'))) {
+      if (liveBadge) liveBadge.classList.remove('hidden');
+      if (lineIdSection) lineIdSection.classList.remove('hidden');
+      if (lineIdDisplay) lineIdDisplay.textContent = `LINE: ${this.currentUser.id}`;
+      // On real mobile LINE, keep the interface clean without mock test accounts
+      if (this.currentUser.isLiffUser && devSection) {
+        devSection.classList.add('hidden');
+      }
+    } else {
+      if (devSection) devSection.classList.remove('hidden');
+    }
+  }
+
+  copyMyLineId() {
+    if (this.currentUser?.id) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(this.currentUser.id);
+      } else {
+        const input = document.createElement('input');
+        input.value = this.currentUser.id;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      this.showToast('success', `คัดลอก LINE ID เรียบร้อย: ${this.currentUser.id}`);
+    }
+  }
+
+  switchTab(tabName) {
+    const tabs = ['calendar', 'my-bookings', 'host'];
+    tabs.forEach(t => {
+      const section = document.getElementById(t === 'calendar' ? 'tabCalendar' : t === 'my-bookings' ? 'tabMyBookings' : 'tabHost');
+      const btn = document.getElementById(t === 'calendar' ? 'tabCalendarBtn' : t === 'my-bookings' ? 'tabMyBookingsBtn' : 'tabHostBtn');
+
+      if (t === tabName) {
+        section.classList.remove('hidden');
+        btn.classList.add('border-emerald-500', 'text-emerald-600');
+        btn.classList.remove('border-transparent', 'text-slate-500');
+      } else {
+        section.classList.add('hidden');
+        btn.classList.remove('border-emerald-500', 'text-emerald-600');
+        btn.classList.add('border-transparent', 'text-slate-500');
+      }
+    });
+
+    if (tabName === 'my-bookings') this.loadMyBookings();
+    if (tabName === 'host') this.loadHostBookings();
+    lucide.createIcons();
+  }
+
+  // -------------------------------------------------------------
+  // Calendar Navigation & Rendering
+  // -------------------------------------------------------------
+  prevMonth() {
+    this.viewMonth--;
+    if (this.viewMonth < 1) {
+      this.viewMonth = 12;
+      this.viewYear--;
+    }
+    this.loadMonthCalendar();
+  }
+
+  nextMonth() {
+    this.viewMonth++;
+    if (this.viewMonth > 12) {
+      this.viewMonth = 1;
+      this.viewYear++;
+    }
+    this.loadMonthCalendar();
+  }
+
+  todayMonth() {
+    const now = new Date();
+    this.viewYear = now.getFullYear();
+    this.viewMonth = now.getMonth() + 1;
+    this.loadMonthCalendar();
+  }
+
+  async loadMonthCalendar() {
+    const grid = document.getElementById('calendarGrid');
+    grid.innerHTML = '<div class="col-span-7 py-12 text-center text-slate-400 text-sm">กำลังโหลดข้อมูลปฏิทิน...</div>';
+
+    // Update Title (Thai Buddhist Era = Year + 543)
+    const titleEl = document.getElementById('calendarMonthTitle');
+    titleEl.textContent = `${THAI_MONTHS[this.viewMonth - 1]} ${this.viewYear + 543}`;
+
+    try {
+      const res = await fetch(`/api/calendar/month?year=${this.viewYear}&month=${this.viewMonth}&userId=${encodeURIComponent(this.currentUser.id)}`);
+      const data = await res.json();
+      this.monthData = data;
+      this.branches = data.branches || [];
+      this.eventTypes = data.eventTypes || [];
+
+      if (data.hostName) {
+        document.getElementById('hostNameHeader').textContent = `คิวของ: ${data.hostName}`;
+      }
+
+      this.renderTeamLegend(data);
+      this.populateBranchDropdown();
+      this.populateEventTypeDropdown();
+      this.renderUserDropdown(data.teamLeaders, data.hostName);
+      this.renderCalendarGrid(data.days);
+    } catch (err) {
+      console.error(err);
+      grid.innerHTML = '<div class="col-span-7 py-12 text-center text-rose-500 text-sm">เกิดข้อผิดพลาดในการโหลดปฏิทิน</div>';
+    }
+  }
+
+  populateEventTypeDropdown() {
+    const select = document.getElementById('bookingEventType');
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '';
+    
+    (this.eventTypes || []).forEach(et => {
+      const opt = document.createElement('option');
+      opt.value = et;
+      opt.textContent = et;
+      select.appendChild(opt);
+    });
+
+    if (currentVal && this.eventTypes.includes(currentVal)) {
+      select.value = currentVal;
+    }
+  }
+
+  renderTeamLegend(data) {
+    const container = document.getElementById('teamLegendItems');
+    if (!container) return;
+    container.innerHTML = '';
+
+    // 1. Host Legend
+    const hostEl = document.createElement('div');
+    hostEl.className = 'flex items-center space-x-1.5 badge-person badge-person-indigo px-2.5 py-1 rounded-lg border text-[11px] shadow-2xs';
+    hostEl.innerHTML = `<span>👑</span> <span class="font-bold">${data.hostName || 'คุณมณเทียร'} (Host)</span> <span class="text-[9px] bg-indigo-100 text-indigo-900 px-1.5 py-0.2 rounded font-medium">📍 ประจำ: ${data.hostDefaultBranchName || 'สำนักงานใหญ่'}</span>`;
+    container.appendChild(hostEl);
+
+    // 2. Leaders Legend
+    (data.teamLeaders || []).forEach(l => {
+      const leaderEl = document.createElement('div');
+      const theme = l.colorTheme || 'sky';
+      leaderEl.className = `flex items-center space-x-1.5 badge-person badge-person-${theme} px-2.5 py-1 rounded-lg border text-[11px] shadow-2xs`;
+      leaderEl.innerHTML = `<span>👤</span> <span class="font-bold">${l.name}</span> <span class="text-[9px] opacity-75">(${l.department})</span> <span class="text-[9px] bg-white/80 px-1.5 py-0.2 rounded font-medium border border-current/20">📍 ประจำ: ${l.defaultBranchName || 'สำนักงานใหญ่'}</span>`;
+      container.appendChild(leaderEl);
+    });
+  }
+
+  renderCalendarGrid(days) {
+    const grid = document.getElementById('calendarGrid');
+    grid.innerHTML = '';
+
+    // First day of month day-of-week (0 = Sunday, 1 = Monday)
+    const firstDayIndex = new Date(this.viewYear, this.viewMonth - 1, 1).getDay();
+
+    // Render blank padding cells before the 1st day
+    for (let i = 0; i < firstDayIndex; i++) {
+      const emptyCell = document.createElement('div');
+      emptyCell.className = 'calendar-cell rounded-xl bg-slate-100/40 border border-transparent opacity-40';
+      grid.appendChild(emptyCell);
+    }
+
+    const isHost = this.currentUser.role === 'host';
+
+    // Render days
+    days.forEach(day => {
+      const cell = document.createElement('div');
+      
+      // Determine CSS class for 4 colors:
+      // status-green, status-yellow, status-red, status-grey
+      let statusClass = `status-${day.status}`;
+
+      cell.className = `calendar-cell rounded-xl border p-1 sm:p-1.5 flex flex-col justify-between cursor-pointer ${statusClass}`;
+      
+      if (day.status === 'grey') {
+        cell.classList.add('cursor-not-allowed');
+      }
+
+      // Roster Badges HTML (Host & Team Leaders with compact abbreviations for mobile)
+      let rosterBadgesHtml = '';
+      if (day.roster && day.roster.length > 0) {
+        // Show max 2 roster entries on the calendar cell to prevent vertical overflow on mobile
+        const visibleRoster = day.roster.slice(0, 2);
+        visibleRoster.forEach(r => {
+          const themeClass = `badge-person-${r.colorTheme || 'indigo'}`;
+          let text = '';
+          if (r.isLeave) {
+            text = `🏖️ ลา`;
+          } else {
+            const roleIcon = r.role === 'host' ? '👑' : '📍';
+            let branchShort = r.branchName || 'SAM';
+            if (branchShort === 'สำนักงานใหญ่') branchShort = 'สนง.ใหญ่';
+            else if (branchShort === 'WFH / ออนไลน์') branchShort = 'WFH';
+
+            if (r.role === 'host') {
+              text = `${roleIcon} ${branchShort}`;
+            } else {
+              text = `${r.shortName}: ${branchShort}`;
+            }
+          }
+          rosterBadgesHtml += `<span class="badge-person ${themeClass}" title="${r.name}: ${r.isLeave ? (r.leaveType || 'ลาพักร้อน') : r.branchName}">${text}</span>`;
+        });
+        if (day.roster.length > 2) {
+          rosterBadgesHtml += `<span class="text-[7.5px] text-slate-400 font-bold block text-center leading-none">+${day.roster.length - 2}</span>`;
+        }
+      }
+
+      // "My Booking" Star Indicator
+      let myBookingHtml = '';
+      if (day.hasMyBooking) {
+        myBookingHtml = `<span class="text-[9px] sm:text-xs font-bold text-amber-500 leading-none" title="คุณมีคิวจองในวันนี้">⭐</span>`;
+      }
+
+      // Lock Indicator (Subtle icon for blocked days - NO bulky overflowing buttons)
+      let lockIndicatorHtml = '';
+      if (day.status === 'grey' || day.isFullDayBlocked) {
+        lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-slate-400 font-bold leading-none" title="ปิดรับคิว (กดเพื่อดูและปลดล็อกได้)">🔒</span>`;
+      }
+
+      // Status text summary (Centered, compact, never broken awkwardly into 2 lines)
+      let queueText = '';
+      if (day.status === 'green') {
+        queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-semibold text-emerald-700 leading-tight whitespace-nowrap">ว่าง (${day.availableSlots})</span>`;
+      } else if (day.status === 'yellow') {
+        queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-bold text-amber-800 bg-amber-200/70 px-1 py-0.5 rounded leading-tight whitespace-nowrap">จอง ${day.bookedSlots}/${day.totalSlots}</span>`;
+      } else if (day.status === 'red') {
+        queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-bold text-rose-700 bg-rose-100 px-1 py-0.5 rounded leading-tight whitespace-nowrap">คิวเต็ม</span>`;
+      } else {
+        queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-slate-600 bg-slate-200/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">ปิดคิว</span>`;
+      }
+
+      cell.innerHTML = `
+        <div class="flex items-center justify-between w-full px-0.5 leading-none">
+          <span class="font-bold text-xs sm:text-sm text-slate-700 leading-none">${day.dayNumber}</span>
+          <div class="flex items-center space-x-0.5">
+            ${myBookingHtml}
+            ${lockIndicatorHtml}
+          </div>
+        </div>
+        <div class="my-0.5 space-y-0.5 w-full overflow-hidden">
+          ${rosterBadgesHtml}
+        </div>
+        <div class="w-full text-center leading-none mt-auto pt-0.5 overflow-hidden">
+          ${queueText}
+        </div>
+      `;
+
+      cell.addEventListener('click', () => {
+        this.openDayModal(day.date);
+      });
+
+      grid.appendChild(cell);
+    });
+
+    lucide.createIcons();
+  }
+
+  // -------------------------------------------------------------
+  // Day Details & Booking Flow
+  // -------------------------------------------------------------
+  async openDayModal(dateStr) {
+    this.selectedDate = dateStr;
+    this.selectedSlot = null;
+
+    const modal = document.getElementById('dayModal');
+    const titleEl = document.getElementById('modalDateTitle');
+    const badgeEl = document.getElementById('modalDateBadge');
+    const dutyBanner = document.getElementById('modalDutyBanner');
+    const dutyTitle = document.getElementById('modalDutyTitle');
+    const dutyDesc = document.getElementById('modalDutyDesc');
+    const slotsList = document.getElementById('modalSlotsList');
+    const formContainer = document.getElementById('bookingFormContainer');
+
+    formContainer.classList.add('hidden');
+    slotsList.innerHTML = '<div class="py-8 text-center text-slate-400 text-xs">กำลังโหลดช่วงเวลา...</div>';
+    modal.classList.remove('hidden');
+
+    // Format Thai Date
+    const d = new Date(dateStr + 'T00:00:00');
+    titleEl.textContent = `วัน${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+
+    try {
+      const res = await fetch(`/api/calendar/day?date=${dateStr}&userId=${encodeURIComponent(this.currentUser.id)}`, {
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+      const data = await res.json();
+
+      this.currentDayData = data;
+
+      // 1. Host Inline Management Box (แสดงเฉพาะเมื่อ Host เป็นผู้เปิดดู)
+      const hostBox = document.getElementById('hostInlineManageBox');
+      const hostStatusText = document.getElementById('hostDayBlockStatusText');
+      const toggleBtn = document.getElementById('toggleDayBlockBtn');
+      const toggleBtnText = document.getElementById('toggleDayBlockBtnText');
+
+      if (data.isHost) {
+        hostBox.classList.remove('hidden');
+        if (data.isFullDayBlocked) {
+          hostStatusText.textContent = 'สถานะ: ⛔ ถูกบล็อกคิวไว้ทั้งวัน (กดเพื่อ Unlock เปิดรับคิว)';
+          toggleBtnText.textContent = '🔓 ปลดล็อกเปิดรับคิว (Unlock Queue)';
+          toggleBtn.className = 'px-4 py-2 font-bold rounded-xl text-xs shadow-md transition flex items-center justify-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white self-stretch sm:self-auto ring-2 ring-emerald-300';
+        } else {
+          hostStatusText.textContent = 'สถานะ: เปิดรับคิวตามปกติ';
+          toggleBtnText.textContent = '⛔ บล็อกคิวทั้งวัน (ปิดรับคิว)';
+          toggleBtn.className = 'px-3.5 py-1.5 font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5 bg-rose-600 hover:bg-rose-700 text-white self-stretch sm:self-auto';
+        }
+
+        // Populate host branches
+        const hostBranchSelect = document.getElementById('inlineHostBranchSelect');
+        hostBranchSelect.innerHTML = '';
+        this.branches.forEach(b => {
+          const opt = document.createElement('option');
+          opt.value = b.id;
+          opt.textContent = `${b.name} (${b.address || ''})`;
+          hostBranchSelect.appendChild(opt);
+        });
+
+        // Prefill Host Duty
+        if (data.duty) {
+          if (data.duty.isLeave) {
+            this.setInlineHostDutyMode('leave');
+            document.getElementById('inlineHostLeaveTypeSelect').value = data.duty.leaveType || 'ลาพักร้อน';
+          } else {
+            this.setInlineHostDutyMode('work');
+            if (data.duty.branchId) hostBranchSelect.value = data.duty.branchId;
+          }
+          document.getElementById('inlineHostNoteInput').value = data.duty.note || '';
+        } else {
+          this.setInlineHostDutyMode('work');
+          if (this.branches.length > 0) hostBranchSelect.value = this.branches[0].id;
+          document.getElementById('inlineHostNoteInput').value = '';
+        }
+      } else {
+        hostBox.classList.add('hidden');
+      }
+
+      // Status Badge
+      const status = data.statusInfo.status;
+      badgeEl.textContent = data.statusInfo.statusText;
+      badgeEl.className = 'inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-0.5 ' +
+        (status === 'green' ? 'bg-emerald-100 text-emerald-700' :
+         status === 'yellow' ? 'bg-amber-100 text-amber-700' :
+         status === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600');
+
+      // Duty / Branch Banner (แบนเนอร์แสดงสถานที่ของหัวหน้า)
+      if (data.duty) {
+        dutyBanner.classList.remove('hidden');
+        if (data.duty.isLeave) {
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-rose-50 border-rose-200 text-rose-900';
+          dutyTitle.textContent = `🏖️ หัวหน้าลา: ${data.duty.leaveType || 'ลาพักร้อน'}`;
+          dutyDesc.textContent = data.duty.note || 'วันหยุดประจำปี - ไม่เปิดรับคิวการประชุม';
+        } else {
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-blue-50 border-blue-200 text-blue-900';
+          dutyTitle.textContent = `📍 สถานที่ของหัวหน้า: ${data.duty.branchName || 'สำนักงานใหญ่'}`;
+          dutyDesc.textContent = data.duty.note || 'เข้าปฏิบัติงานตามปกติ สามารถลงคิวเข้าพบได้';
+        }
+      } else {
+        dutyBanner.classList.remove('hidden');
+        dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-50 border-slate-200 text-slate-700';
+        dutyTitle.textContent = '📍 สถานที่ของหัวหน้า: สำนักงานใหญ่ (ปกติ)';
+        dutyDesc.textContent = 'เข้าปฏิบัติงานตามปกติ';
+      }
+
+      // 3. Setup Team Leader Inline Box & Leaders List
+      const leaderSelect = document.getElementById('inlineLeaderSelect');
+      leaderSelect.innerHTML = '';
+      const leaderBranchSelect = document.getElementById('inlineLeaderBranchSelect');
+      leaderBranchSelect.innerHTML = '';
+      this.branches.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `${b.name} (${b.address || ''})`;
+        leaderBranchSelect.appendChild(opt);
+      });
+
+      (data.teamDuties || []).forEach(tl => {
+        const opt = document.createElement('option');
+        opt.value = tl.leaderId;
+        opt.textContent = `${tl.leaderName} (${tl.department})`;
+        leaderSelect.appendChild(opt);
+      });
+
+      const leaderBox = document.getElementById('leaderInlineManageBox');
+      const isLeader = this.currentUser.role === 'team_leader';
+      const isHost = data.isHost || this.currentUser.role === 'host';
+      const btnLeaderUpdateSelf = document.getElementById('btnLeaderUpdateSelf');
+
+      if (isLeader) {
+        // Auto-show inline box for leader and preselect self
+        const myTl = (data.teamDuties || []).find(tl => tl.lineUserId === this.currentUser.id || tl.leaderId === this.currentUser.leaderId);
+        if (myTl) {
+          leaderSelect.value = myTl.leaderId;
+        }
+        this.populateLeaderInlineForm(leaderSelect.value);
+        leaderBox.classList.remove('hidden');
+        btnLeaderUpdateSelf.classList.remove('hidden');
+      } else if (isHost) {
+        // Host can open it if needed
+        btnLeaderUpdateSelf.classList.remove('hidden');
+        leaderBox.classList.add('hidden');
+      } else {
+        leaderBox.classList.add('hidden');
+        btnLeaderUpdateSelf.classList.add('hidden');
+      }
+
+      // Render Team Leaders Daily Duties List
+      const leadersListEl = document.getElementById('modalTeamLeadersList');
+      leadersListEl.innerHTML = '';
+      if (!data.teamDuties || data.teamDuties.length === 0) {
+        leadersListEl.innerHTML = '<div class="text-[11px] text-slate-400 py-1">ยังไม่มีรายชื่อหัวหน้าทีม</div>';
+      } else {
+        data.teamDuties.forEach(tl => {
+          const item = document.createElement('div');
+          item.className = 'p-2 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs shadow-2xs';
+
+          let statusBadge = '';
+          if (tl.duty) {
+            if (tl.duty.isLeave) {
+              statusBadge = `<span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏖️ ${tl.duty.leaveType || 'ลาพักร้อน'}</span>`;
+            } else {
+              statusBadge = `<span class="bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-md text-[10px]">🏢 ${tl.duty.branchName || 'สำนักงานใหญ่'}</span>`;
+            }
+          } else {
+            statusBadge = `<span class="bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-md text-[10px]">🏢 สำนักงานใหญ่ (ปกติ)</span>`;
+          }
+
+          const isMe = (this.currentUser.id === tl.lineUserId || (this.currentUser.leaderId && this.currentUser.leaderId === tl.leaderId));
+
+          item.innerHTML = `
+            <div class="flex items-center space-x-2">
+              <img src="${tl.picture}" class="w-6 h-6 rounded-full bg-slate-200 border border-white">
+              <div>
+                <span class="font-bold text-slate-800 text-[11px] sm:text-xs">${tl.leaderName}</span>
+                <span class="text-[10px] text-slate-400 ml-1">(${tl.department})</span>
+                ${isMe ? '<span class="ml-1 text-[9px] font-bold bg-teal-100 text-teal-800 px-1 py-0.2 rounded">คุณ</span>' : ''}
+                ${tl.duty && tl.duty.note ? `<div class="text-[10px] text-slate-500 italic mt-0.5">"${tl.duty.note}"</div>` : ''}
+              </div>
+            </div>
+            <div class="flex items-center space-x-1.5">
+              ${statusBadge}
+              ${(isMe || isHost) ? `
+                <button onclick="app.openLeaderInlineBox('${tl.leaderId}')" class="p-1 text-teal-600 hover:bg-teal-50 rounded transition" title="แก้ไขสถานะในหน้านี้">
+                  <i data-lucide="edit-2" class="w-3 h-3"></i>
+                </button>
+              ` : ''}
+            </div>
+          `;
+          leadersListEl.appendChild(item);
+        });
+      }
+
+      this.renderSlots(data.slots, data.isHost);
+    } catch (err) {
+      console.error(err);
+      slotsList.innerHTML = '<div class="py-6 text-center text-rose-500 text-xs">เกิดข้อผิดพลาดในการโหลดช่วงเวลา</div>';
+    }
+
+    lucide.createIcons();
+  }
+
+  closeDayModal() {
+    document.getElementById('dayModal').classList.add('hidden');
+    this.selectedDate = null;
+    this.selectedSlot = null;
+  }
+
+  async toggleDayBlock() {
+    if (!this.selectedDate) return;
+
+    try {
+      const res = await fetch('/api/host/toggle-day-block', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ date: this.selectedDate })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถเปลี่ยนสถานะบล็อกได้');
+
+      this.showToast(data.isBlocked ? 'info' : 'success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async quickUnlockDate(dateStr) {
+    if (this.currentUser.role !== 'host') {
+      this.showToast('error', 'ความปลอดภัย: เฉพาะ Host เท่านั้นที่สามารถปลดล็อกคิวได้');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/host/toggle-day-block', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ date: dateStr })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถปลดล็อกได้');
+
+      this.showToast('success', `🔓 ${data.message}`);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async clearTestBookings() {
+    if (this.currentUser.role !== 'host') {
+      this.showToast('error', 'ความปลอดภัย: เฉพาะ Host เท่านั้นที่สามารถล้างคิวได้');
+      return;
+    }
+
+    if (!confirm('ยืนยันการล้างประวัติการจองทดสอบทั้งหมดหรือไม่?\n\n(ข้อมูลการจองทั้งหมดจะถูกรีเซ็ตให้ว่าง 100% เพื่อเตรียมเปิดรับคิวจริง)')) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/host/clear-test-bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถล้างคิวได้');
+
+      this.showToast('success', '🧹 ล้างประวัติการจองทดสอบทั้งหมดเรียบร้อยแล้ว');
+      await this.loadMonthCalendar();
+      if (typeof this.loadHostBookings === 'function') {
+        await this.loadHostBookings();
+      }
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Inline Host & Leader Daily Management Handlers (หน้าต่างจัดการคิวประจำวัน)
+  // -------------------------------------------------------------
+  switchHostSubTab(tab) {
+    const dutyBtn = document.getElementById('tabHostSubDutyBtn');
+    const blockBtn = document.getElementById('tabHostSubBlockBtn');
+    const dutyTab = document.getElementById('hostSubTabDuty');
+    const blockTab = document.getElementById('hostSubTabBlock');
+
+    if (tab === 'duty') {
+      dutyBtn.className = 'pb-2 px-2 font-bold border-b-2 border-amber-600 text-amber-900 transition flex items-center space-x-1';
+      blockBtn.className = 'pb-2 px-2 font-medium text-slate-500 hover:text-slate-800 border-b-2 border-transparent transition flex items-center space-x-1';
+      dutyTab.classList.remove('hidden');
+      blockTab.classList.add('hidden');
+    } else {
+      dutyBtn.className = 'pb-2 px-2 font-medium text-slate-500 hover:text-slate-800 border-b-2 border-transparent transition flex items-center space-x-1';
+      blockBtn.className = 'pb-2 px-2 font-bold border-b-2 border-rose-600 text-rose-900 transition flex items-center space-x-1';
+      dutyTab.classList.add('hidden');
+      blockTab.classList.remove('hidden');
+    }
+    lucide.createIcons();
+  }
+
+  setInlineHostDutyMode(mode) {
+    this.inlineHostMode = mode;
+    const workBtn = document.getElementById('inlineHostModeWork');
+    const leaveBtn = document.getElementById('inlineHostModeLeave');
+    const branchRow = document.getElementById('inlineHostBranchSelectRow');
+    const leaveRow = document.getElementById('inlineHostLeaveSelectRow');
+
+    if (mode === 'work') {
+      workBtn.className = 'py-2 px-2.5 border border-amber-500 bg-amber-100/70 text-amber-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5';
+      leaveBtn.className = 'py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50';
+      branchRow.classList.remove('hidden');
+      leaveRow.classList.add('hidden');
+    } else {
+      workBtn.className = 'py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50';
+      leaveBtn.className = 'py-2 px-2.5 border border-rose-500 bg-rose-100/70 text-rose-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5';
+      branchRow.classList.add('hidden');
+      leaveRow.classList.remove('hidden');
+    }
+  }
+
+  setInlineLeaderDutyMode(mode) {
+    this.inlineLeaderMode = mode;
+    const workBtn = document.getElementById('inlineLeaderModeWork');
+    const leaveBtn = document.getElementById('inlineLeaderModeLeave');
+    const branchRow = document.getElementById('inlineLeaderBranchSelectRow');
+    const leaveRow = document.getElementById('inlineLeaderLeaveSelectRow');
+
+    if (mode === 'work') {
+      workBtn.className = 'py-2 px-2.5 border border-teal-500 bg-teal-100 text-teal-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5';
+      leaveBtn.className = 'py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50';
+      branchRow.classList.remove('hidden');
+      leaveRow.classList.add('hidden');
+    } else {
+      workBtn.className = 'py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50';
+      leaveBtn.className = 'py-2 px-2.5 border border-rose-500 bg-rose-100 text-rose-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5';
+      branchRow.classList.add('hidden');
+      leaveRow.classList.remove('hidden');
+    }
+  }
+
+  toggleLeaderInlineBox(show) {
+    const box = document.getElementById('leaderInlineManageBox');
+    if (show) {
+      box.classList.remove('hidden');
+      const leaderSelect = document.getElementById('inlineLeaderSelect');
+      this.populateLeaderInlineForm(leaderSelect.value);
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      box.classList.add('hidden');
+    }
+    lucide.createIcons();
+  }
+
+  openLeaderInlineBox(leaderId) {
+    const box = document.getElementById('leaderInlineManageBox');
+    box.classList.remove('hidden');
+    const leaderSelect = document.getElementById('inlineLeaderSelect');
+    if (leaderId) {
+      leaderSelect.value = leaderId;
+    }
+    this.populateLeaderInlineForm(leaderSelect.value);
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    lucide.createIcons();
+  }
+
+  onInlineLeaderSelectChange() {
+    const leaderSelect = document.getElementById('inlineLeaderSelect');
+    this.populateLeaderInlineForm(leaderSelect.value);
+  }
+
+  populateLeaderInlineForm(leaderId) {
+    if (!this.currentDayData || !this.currentDayData.teamDuties) return;
+    const tl = this.currentDayData.teamDuties.find(t => t.leaderId === leaderId);
+    if (tl && tl.duty) {
+      if (tl.duty.isLeave) {
+        this.setInlineLeaderDutyMode('leave');
+        document.getElementById('inlineLeaderLeaveTypeSelect').value = tl.duty.leaveType || 'ลาพักร้อน';
+      } else {
+        this.setInlineLeaderDutyMode('work');
+        if (tl.duty.branchId) document.getElementById('inlineLeaderBranchSelect').value = tl.duty.branchId;
+      }
+      document.getElementById('inlineLeaderNoteInput').value = tl.duty.note || '';
+    } else {
+      this.setInlineLeaderDutyMode('work');
+      if (this.branches.length > 0) document.getElementById('inlineLeaderBranchSelect').value = this.branches[0].id;
+      document.getElementById('inlineLeaderNoteInput').value = '';
+    }
+  }
+
+  async saveInlineHostDuty() {
+    if (!this.selectedDate) return;
+    const note = document.getElementById('inlineHostNoteInput').value.trim();
+    let payload = { date: this.selectedDate, note };
+
+    if (this.inlineHostMode === 'leave') {
+      const leaveType = document.getElementById('inlineHostLeaveTypeSelect').value;
+      payload.isLeave = true;
+      payload.leaveType = leaveType;
+    } else {
+      const branchId = document.getElementById('inlineHostBranchSelect').value;
+      const branchObj = this.branches.find(b => b.id === branchId);
+      payload.isLeave = false;
+      payload.branchId = branchId;
+      payload.branchName = branchObj ? branchObj.name : 'สำนักงานใหญ่';
+    }
+
+    try {
+      const res = await fetch('/api/host/duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกได้');
+
+      this.showToast('success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async saveInlineHostBlock() {
+    if (!this.selectedDate) return;
+    const startTime = document.getElementById('inlineBlockStartTime').value;
+    const endTime = document.getElementById('inlineBlockEndTime').value;
+    const reason = document.getElementById('inlineBlockReason').value.trim();
+
+    if (!startTime || !endTime) {
+      this.showToast('error', 'กรุณาระบุเวลาเริ่มต้นและสิ้นสุด');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/host/block-slot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({
+          date: this.selectedDate,
+          isFullDay: false,
+          startTime,
+          endTime,
+          reason: reason || 'Host ติดภารกิจ'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบล็อกช่วงเวลาได้');
+
+      this.showToast('success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async saveInlineLeaderDuty() {
+    if (!this.selectedDate) return;
+    const leaderId = document.getElementById('inlineLeaderSelect').value;
+    const note = document.getElementById('inlineLeaderNoteInput').value.trim();
+
+    if (!leaderId) {
+      this.showToast('error', 'กรุณาเลือกหัวหน้าทีม');
+      return;
+    }
+
+    let payload = { leaderId, date: this.selectedDate, note };
+
+    if (this.inlineLeaderMode === 'leave') {
+      payload.isLeave = true;
+      payload.leaveType = document.getElementById('inlineLeaderLeaveTypeSelect').value;
+    } else {
+      const branchId = document.getElementById('inlineLeaderBranchSelect').value;
+      const bObj = this.branches.find(b => b.id === branchId);
+      payload.isLeave = false;
+      payload.branchId = branchId;
+      payload.branchName = bObj ? bObj.name : 'สำนักงานใหญ่';
+    }
+
+    try {
+      const res = await fetch('/api/team-duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกสถานะได้');
+
+      this.showToast('success', data.message);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  renderSlots(slots, isHost) {
+    const slotsList = document.getElementById('modalSlotsList');
+    slotsList.innerHTML = '';
+
+    if (!slots || slots.length === 0) {
+      slotsList.innerHTML = '<div class="py-6 text-center text-slate-400 text-xs">ไม่มีรอบเวลาสำหรับวันนี้</div>';
+      return;
+    }
+
+    slots.forEach(slot => {
+      const slotCard = document.createElement('div');
+      slotCard.className = 'p-3 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-2';
+
+      if (slot.state === 'available') {
+        slotCard.classList.add('bg-white', 'border-emerald-200', 'hover:border-emerald-500', 'hover:bg-emerald-50/40');
+        slotCard.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <div>
+              <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
+              <span class="ml-2 text-[11px] font-semibold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md">ว่าง</span>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 self-end sm:self-center">
+            ${isHost ? `
+              <button onclick="app.quickBlockSlot('${slot.startTime}', '${slot.endTime}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-300 text-xs font-semibold rounded-lg transition flex items-center space-x-1" title="บล็อกช่วงเวลานี้">
+                <i data-lucide="slash" class="w-3 h-3 text-rose-500"></i>
+                <span>บล็อกรอบนี้</span>
+              </button>
+            ` : ''}
+            <button onclick="app.selectSlot('${slot.startTime}', '${slot.endTime}')" class="px-3.5 py-1.5 btn-line text-xs font-bold rounded-lg shadow-xs">
+              ลงคิวรอบนี้
+            </button>
+          </div>
+        `;
+      } else if (slot.state === 'booked') {
+        const b = slot.booking;
+        const isMine = b.isMine;
+
+        if (isMine) {
+          slotCard.classList.add('bg-amber-50/70', 'border-amber-300');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <div>
+                <div class="flex items-center space-x-1.5">
+                  <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
+                  <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>
+                </div>
+                <div class="text-xs font-semibold text-slate-700 mt-0.5">📌 ${b.eventTitle} (${b.eventType})</div>
+              </div>
+            </div>
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center">
+              ยกเลิกคิวนี้
+            </button>
+          `;
+        } else {
+          // Booked by other employee (STRICT ACCESS CONTROL: Other employees cannot cancel or edit!)
+          slotCard.classList.add('bg-slate-50', 'border-slate-200');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <img src="${b.employeePicture}" class="w-7 h-7 rounded-full bg-slate-200 border border-white">
+              <div>
+                <div class="flex items-center space-x-1.5">
+                  <span class="font-bold text-xs sm:text-sm text-slate-500">${slot.label}</span>
+                  <span class="text-[10px] font-semibold text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded-md">จองแล้ว</span>
+                </div>
+                <div class="text-xs text-slate-600 font-medium">${b.employeeName}</div>
+              </div>
+            </div>
+            ${isHost ? `
+              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center">
+                ยกเลิก (Host)
+              </button>
+            ` : `
+              <span class="text-[11px] text-slate-400 italic self-end sm:self-center">🔒 คิวของผู้อื่น</span>
+            `}
+          `;
+        }
+      } else if (slot.state === 'blocked') {
+        // Blocked by Host
+        slotCard.classList.add('bg-slate-100', 'border-slate-300');
+        slotCard.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+            <div>
+              <span class="font-bold text-xs sm:text-sm text-slate-600">${slot.label}</span>
+              <span class="ml-2 text-[10px] font-medium text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded-md">Host ติดภารกิจ</span>
+              <div class="text-[11px] text-slate-500 mt-0.5">⛔ ${slot.reason}</div>
+            </div>
+          </div>
+          ${isHost && slot.blockId ? `
+            <button onclick="app.unblockSlot('${slot.blockId}')" class="px-2.5 py-1 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-300 hover:border-emerald-300 text-[11px] font-semibold rounded-lg transition self-end sm:self-center flex items-center space-x-1">
+              <i data-lucide="unlock" class="w-3 h-3 text-emerald-600"></i>
+              <span>ยกเลิกบล็อก (เปิดรับคิว)</span>
+            </button>
+          ` : `
+            <span class="text-[11px] text-slate-400 self-end sm:self-center">งดรับคิว</span>
+          `}
+        `;
+      }
+
+      slotsList.appendChild(slotCard);
+    });
+    lucide.createIcons();
+  }
+
+  async quickBlockSlot(startTime, endTime) {
+    if (!this.selectedDate) return;
+    const reason = prompt(`ระบุเหตุผลที่ไม่ว่างสำหรับรอบ ${startTime} - ${endTime} (หรือเว้นว่างไว้เพื่อใช้ค่าเริ่มต้น):`, 'Host ติดภารกิจ');
+    if (reason === null) return; // User cancelled
+
+    try {
+      const res = await fetch('/api/host/block-slot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({
+          date: this.selectedDate,
+          isFullDay: false,
+          startTime,
+          endTime,
+          reason: reason.trim() || 'Host ติดภารกิจ'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบล็อกช่วงเวลาได้');
+
+      this.showToast('success', `บล็อกช่วงเวลา ${startTime} - ${endTime} เรียบร้อยแล้ว`);
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  selectSlot(startTime, endTime) {
+    this.selectedSlot = { startTime, endTime };
+    const formContainer = document.getElementById('bookingFormContainer');
+    const badge = document.getElementById('selectedSlotBadge');
+    badge.textContent = `${startTime} - ${endTime}`;
+    formContainer.classList.remove('hidden');
+
+    // Auto focus on event title
+    const input = document.getElementById('bookingEventTitle');
+    input.focus();
+    formContainer.scrollIntoView({ behavior: 'smooth' });
+    lucide.createIcons();
+  }
+
+  async submitBooking() {
+    if (!this.selectedDate || !this.selectedSlot) {
+      this.showToast('error', 'กรุณาเลือกรอบเวลาที่ต้องการลงคิว');
+      return;
+    }
+
+    const eventTitle = document.getElementById('bookingEventTitle').value.trim();
+    const eventType = document.getElementById('bookingEventType').value;
+    const meetingFormat = document.querySelector('input[name="meetingFormat"]:checked')?.value || 'onsite';
+    const notes = document.getElementById('bookingNotes').value.trim();
+
+    if (!eventTitle) {
+      this.showToast('error', 'กรุณาระบุชื่องาน / หัวข้อการประชุม');
+      document.getElementById('bookingEventTitle').focus();
+      return;
+    }
+
+    const payload = {
+      date: this.selectedDate,
+      startTime: this.selectedSlot.startTime,
+      endTime: this.selectedSlot.endTime,
+      eventTitle,
+      eventType,
+      employeeName: this.currentUser.name,
+      employeeUserId: this.currentUser.id,
+      employeePicture: this.currentUser.picture,
+      meetingType: meetingFormat,
+      notes
+    };
+
+    const submitBtn = document.getElementById('submitBookingBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>กำลังบันทึกคิว...</span>';
+
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'ไม่สามารถลงคิวได้');
+      }
+
+      this.showToast('success', '🎉 ลงคิว Meeting สำเร็จเรียบร้อยแล้ว!');
+
+      // Send LINE message via LIFF if inside LINE app
+      if (typeof liff !== 'undefined' && liff.isLoggedIn() && liff.isInClient()) {
+        try {
+          await liff.sendMessages([
+            {
+              type: 'text',
+              text: `📅 ลงคิว Meeting สำเร็จ!\nหัวข้อ: ${eventTitle}\nวันที่: ${this.selectedDate}\nเวลา: ${this.selectedSlot.startTime} - ${this.selectedSlot.endTime} น.\nผู้ลงคิว: ${this.currentUser.name}`
+            }
+          ]);
+        } catch (msgErr) {
+          console.log('LIFF message send skipped/failed:', msgErr);
+        }
+      }
+
+      // Reset form
+      document.getElementById('bookingEventTitle').value = '';
+      document.getElementById('bookingNotes').value = '';
+
+      // Reload
+      await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+      this.loadMyBookings();
+    } catch (err) {
+      this.showToast('error', err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span>ยืนยันการลงคิว Meeting</span>';
+      lucide.createIcons();
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Cancel Booking (Strict Permission Enforcement)
+  // -------------------------------------------------------------
+  async cancelBooking(bookingId) {
+    if (!confirm('คุณต้องการยกเลิกคิวการประชุมนี้ใช่หรือไม่?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'ไม่สามารถยกเลิกคิวได้');
+      }
+
+      this.showToast('info', 'ยกเลิกคิวเรียบร้อยแล้ว');
+      if (this.selectedDate) {
+        await this.openDayModal(this.selectedDate);
+      }
+      await this.loadMonthCalendar();
+      this.loadMyBookings();
+      this.loadHostBookings();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // My Bookings Tab
+  // -------------------------------------------------------------
+  async loadMyBookings() {
+    const list = document.getElementById('myBookingsList');
+    const badge = document.getElementById('myBookingsBadge');
+
+    try {
+      const res = await fetch(`/api/my-bookings?userId=${encodeURIComponent(this.currentUser.id)}`, {
+        headers: { 'x-user-id': this.currentUser.id }
+      });
+      const data = await res.json();
+      const bookings = data.bookings || [];
+
+      badge.textContent = bookings.length;
+      if (bookings.length > 0) {
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+
+      if (bookings.length === 0) {
+        list.innerHTML = '<div class="text-center py-10 text-slate-400 text-xs">คุณยังไม่มีคิวการประชุมที่ลงไว้</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      bookings.forEach(b => {
+        const item = document.createElement('div');
+        item.className = 'p-4 rounded-2xl border border-slate-200 bg-white shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+        
+        const d = new Date(b.date + 'T00:00:00');
+        const thaiDateStr = `วัน${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+
+        item.innerHTML = `
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-lg">${thaiDateStr}</span>
+              <span class="text-xs font-bold text-slate-700">${b.startTime} - ${b.endTime} น.</span>
+            </div>
+            <h4 class="font-bold text-slate-800 text-sm mt-1.5">📌 ${b.eventTitle}</h4>
+            <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
+              <span class="bg-slate-100 px-2 py-0.5 rounded-md font-medium">${b.eventType}</span>
+              <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName}`}</span>
+            </div>
+            ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
+          </div>
+          <button onclick="app.cancelBooking('${b.id}')" class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
+            ยกเลิกคิวนี้
+          </button>
+        `;
+        list.appendChild(item);
+      });
+    } catch (err) {
+      console.error(err);
+      list.innerHTML = '<div class="text-center py-6 text-rose-500 text-xs">เกิดข้อผิดพลาดในการโหลดคิวของฉัน</div>';
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Host Management Tab
+  // -------------------------------------------------------------
+  populateBranchDropdown() {
+    const select = document.getElementById('dutyBranchSelect');
+    if (select) {
+      select.innerHTML = '';
+      this.branches.forEach(br => {
+        const opt = document.createElement('option');
+        opt.value = br.id;
+        opt.textContent = `${br.name} (${br.address})`;
+        select.appendChild(opt);
+      });
+    }
+
+    const hostBranchSelect = document.getElementById('settingHostDefaultBranch');
+    if (hostBranchSelect) {
+      const currentHostBranch = hostBranchSelect.value;
+      hostBranchSelect.innerHTML = '';
+      this.branches.forEach(br => {
+        const opt = document.createElement('option');
+        opt.value = br.id;
+        opt.textContent = `${br.name} (${br.address})`;
+        hostBranchSelect.appendChild(opt);
+      });
+      if (currentHostBranch) hostBranchSelect.value = currentHostBranch;
+    }
+
+    const newLeaderBranchSelect = document.getElementById('newLeaderDefaultBranch');
+    if (newLeaderBranchSelect) {
+      const currentLeaderBranch = newLeaderBranchSelect.value;
+      newLeaderBranchSelect.innerHTML = '';
+      this.branches.forEach(br => {
+        const opt = document.createElement('option');
+        opt.value = br.id;
+        opt.textContent = `${br.name} (${br.address})`;
+        newLeaderBranchSelect.appendChild(opt);
+      });
+      if (currentLeaderBranch) newLeaderBranchSelect.value = currentLeaderBranch;
+    }
+  }
+
+  openDutyModal() {
+    const dateInput = document.getElementById('dutyDateInput');
+    const todayStr = new Date().toISOString().split('T')[0];
+    dateInput.value = this.selectedDate || todayStr;
+    this.setDutyMode('work');
+    document.getElementById('dutyModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeDutyModal() {
+    document.getElementById('dutyModal').classList.add('hidden');
+  }
+
+  setDutyMode(mode) {
+    const workBtn = document.getElementById('dutyTypeWorkBtn');
+    const leaveBtn = document.getElementById('dutyTypeLeaveBtn');
+    const branchSection = document.getElementById('dutyBranchSection');
+    const leaveSection = document.getElementById('dutyLeaveSection');
+
+    if (mode === 'work') {
+      workBtn.className = 'py-2 px-3 border border-amber-500 bg-amber-50 text-amber-900 rounded-xl font-semibold text-center transition';
+      leaveBtn.className = 'py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition';
+      branchSection.classList.remove('hidden');
+      leaveSection.classList.add('hidden');
+      this.dutyMode = 'work';
+    } else {
+      workBtn.className = 'py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition';
+      leaveBtn.className = 'py-2 px-3 border border-rose-500 bg-rose-50 text-rose-900 rounded-xl font-semibold text-center transition';
+      branchSection.classList.add('hidden');
+      leaveSection.classList.remove('hidden');
+      this.dutyMode = 'leave';
+    }
+  }
+
+  async saveDuty() {
+    const date = document.getElementById('dutyDateInput').value;
+    const note = document.getElementById('dutyNoteInput').value.trim();
+    if (!date) {
+      this.showToast('error', 'กรุณาเลือกวันที่');
+      return;
+    }
+
+    let payload = { date, note };
+    if (this.dutyMode === 'leave') {
+      const leaveType = document.getElementById('dutyLeaveTypeSelect').value;
+      payload.isLeave = true;
+      payload.leaveType = leaveType;
+    } else {
+      const branchId = document.getElementById('dutyBranchSelect').value;
+      const branchObj = this.branches.find(b => b.id === branchId);
+      payload.isLeave = false;
+      payload.branchId = branchId;
+      payload.branchName = branchObj ? branchObj.name : 'สำนักงานใหญ่';
+    }
+
+    try {
+      const res = await fetch('/api/host/duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกได้');
+
+      this.showToast('success', data.message);
+      this.closeDutyModal();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  openBlockModal() {
+    const dateInput = document.getElementById('blockDateInput');
+    const todayStr = new Date().toISOString().split('T')[0];
+    dateInput.value = this.selectedDate || todayStr;
+    document.getElementById('blockFullDayCheckbox').checked = false;
+    document.getElementById('blockTimeInputs').classList.remove('hidden');
+    document.getElementById('blockReasonInput').value = '';
+    document.getElementById('blockModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeBlockModal() {
+    document.getElementById('blockModal').classList.add('hidden');
+  }
+
+  toggleBlockFullDay() {
+    const isFullDay = document.getElementById('blockFullDayCheckbox').checked;
+    const timeInputs = document.getElementById('blockTimeInputs');
+    if (isFullDay) {
+      timeInputs.classList.add('hidden');
+    } else {
+      timeInputs.classList.remove('hidden');
+    }
+  }
+
+  async saveBlockSlot() {
+    const date = document.getElementById('blockDateInput').value;
+    const isFullDay = document.getElementById('blockFullDayCheckbox').checked;
+    const startTime = document.getElementById('blockStartTimeInput').value;
+    const endTime = document.getElementById('blockEndTimeInput').value;
+    const reason = document.getElementById('blockReasonInput').value.trim();
+
+    if (!date) {
+      this.showToast('error', 'กรุณาเลือกวันที่');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/host/block-slot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ date, isFullDay, startTime, endTime, reason })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกบล็อกเวลาได้');
+
+      this.showToast('success', data.message);
+      this.closeBlockModal();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async unblockSlot(blockId) {
+    if (!confirm('ต้องการยกเลิกการบล็อกช่วงเวลานี้หรือไม่?')) return;
+
+    try {
+      const res = await fetch(`/api/host/block-slot/${blockId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถยกเลิกได้');
+
+      this.showToast('info', data.message);
+      if (this.selectedDate) await this.openDayModal(this.selectedDate);
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async loadHostBookings() {
+    const list = document.getElementById('hostBookingsList');
+    const countBadge = document.getElementById('hostTotalBookingsCount');
+
+    try {
+      const res = await fetch('/api/host/bookings', {
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      if (res.status === 403) {
+        list.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">🔒 เฉพาะ Host เท่านั้นที่สามารถดูรายชื่อคิวทั้งหมดได้ (กรุณาสลับเป็น Host ที่มุมขวาบน)</div>';
+        countBadge.textContent = 'ล็อกสิทธิ์';
+        return;
+      }
+
+      const data = await res.json();
+      const bookings = data.bookings || [];
+      countBadge.textContent = `${bookings.length} รายการ`;
+
+      if (bookings.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-slate-400 text-xs">ยังไม่มีคิวที่ลงไว้</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      bookings.forEach(b => {
+        const item = document.createElement('div');
+        item.className = 'p-4 rounded-2xl border border-slate-200 bg-white shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+        
+        const d = new Date(b.date + 'T00:00:00');
+        const thaiDateStr = `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+
+        item.innerHTML = `
+          <div class="flex items-start space-x-3">
+            <img src="${b.employeePicture}" class="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-xs shrink-0">
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-bold text-slate-800">${b.employeeName}</span>
+                <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + b.branchName}</span>
+              </div>
+              <h4 class="font-bold text-slate-800 text-xs sm:text-sm mt-0.5">📌 ${b.eventTitle}</h4>
+              <div class="flex items-center space-x-2 text-xs text-slate-500 mt-0.5">
+                <span class="font-medium text-emerald-700">📅 ${thaiDateStr} (${b.startTime} - ${b.endTime} น.)</span>
+                <span>•</span>
+                <span>${b.eventType}</span>
+              </div>
+              ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
+            </div>
+          </div>
+          <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
+            ยกเลิกคิวนี้
+          </button>
+        `;
+        list.appendChild(item);
+      });
+    } catch (err) {
+      console.error(err);
+      list.innerHTML = '<div class="text-center py-6 text-rose-500 text-xs">เกิดข้อผิดพลาดในการโหลดรายการคิว</div>';
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Branch Management (จัดการรายชื่อสาขา)
+  // -------------------------------------------------------------
+  openBranchModal() {
+    this.renderBranchList();
+    document.getElementById('newBranchName').value = '';
+    document.getElementById('newBranchAddress').value = '';
+    document.getElementById('branchModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeBranchModal() {
+    document.getElementById('branchModal').classList.add('hidden');
+  }
+
+  renderBranchList() {
+    const container = document.getElementById('branchListContainer');
+    container.innerHTML = '';
+
+    if (!this.branches || this.branches.length === 0) {
+      container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs">ยังไม่มีสาขาที่บันทึกไว้</div>';
+      return;
+    }
+
+    this.branches.forEach(b => {
+      const item = document.createElement('div');
+      item.className = 'p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs';
+      item.innerHTML = `
+        <div class="flex-1">
+          <div class="font-bold text-slate-800 flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+            <span id="branchNameDisplay_${b.id}">${b.name}</span>
+          </div>
+          <div id="branchAddressDisplay_${b.id}" class="text-[11px] text-slate-500 mt-0.5">${b.address || 'ไม่มีที่อยู่ระบุ'}</div>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <button onclick="app.editBranch('${b.id}')" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition" title="แก้ไข">
+            <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+          </button>
+          <button onclick="app.deleteBranch('${b.id}')" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition" title="ลบ">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      `;
+      container.appendChild(item);
+    });
+
+    lucide.createIcons();
+  }
+
+  async addBranch() {
+    const name = document.getElementById('newBranchName').value.trim();
+    const address = document.getElementById('newBranchAddress').value.trim();
+
+    if (!name) {
+      this.showToast('error', 'กรุณาระบุชื่อสาขา');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/branches', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name, address })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถเพิ่มสาขาได้');
+
+      this.showToast('success', 'เพิ่มสาขาเรียบร้อยแล้ว!');
+      this.branches.push(data.branch);
+      document.getElementById('newBranchName').value = '';
+      document.getElementById('newBranchAddress').value = '';
+      this.renderBranchList();
+      this.populateBranchDropdown();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async editBranch(branchId) {
+    const branch = this.branches.find(b => b.id === branchId);
+    if (!branch) return;
+
+    const newName = prompt('แก้ไขชื่อสาขา:', branch.name);
+    if (newName === null) return;
+    if (!newName.trim()) {
+      alert('ชื่อสาขาต้องไม่เว้นว่าง');
+      return;
+    }
+
+    const newAddress = prompt('แก้ไขที่อยู่ / ห้องประชุม:', branch.address || '');
+    if (newAddress === null) return;
+
+    try {
+      const res = await fetch(`/api/branches/${branchId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name: newName.trim(), address: newAddress.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถแก้ไขได้');
+
+      this.showToast('success', 'แก้ไขชื่อสาขาสำเร็จ!');
+      branch.name = newName.trim();
+      branch.address = newAddress.trim();
+      this.renderBranchList();
+      this.populateBranchDropdown();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async deleteBranch(branchId) {
+    const branch = this.branches.find(b => b.id === branchId);
+    if (!branch) return;
+
+    if (!confirm(`คุณต้องการลบสาขา "${branch.name}" ใช่หรือไม่?`)) return;
+
+    try {
+      const res = await fetch(`/api/branches/${branchId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถลบได้');
+
+      this.showToast('info', 'ลบสาขาเรียบร้อยแล้ว');
+      this.branches = this.branches.filter(b => b.id !== branchId);
+      this.renderBranchList();
+      this.populateBranchDropdown();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Team Leader Duty (หัวหน้าทีมบันทึกสาขา / วันลา)
+  // -------------------------------------------------------------
+  async openTeamDutyModal(targetLeaderId) {
+    const leaderSelect = document.getElementById('teamDutyLeaderSelect');
+    const branchSelect = document.getElementById('teamDutyBranchSelect');
+    const dateInput = document.getElementById('teamDutyDateInput');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    dateInput.value = this.selectedDate || todayStr;
+
+    // Populate branches
+    branchSelect.innerHTML = '';
+    this.branches.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = `${b.name} (${b.address || ''})`;
+      branchSelect.appendChild(opt);
+    });
+
+    // Populate leaders
+    try {
+      const res = await fetch('/api/team-leaders');
+      const data = await res.json();
+      this.teamLeaders = data.leaders || [];
+
+      leaderSelect.innerHTML = '';
+      this.teamLeaders.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id;
+        opt.textContent = `${l.name} (${l.department})`;
+        if (targetLeaderId && l.id === targetLeaderId) {
+          opt.selected = true;
+        } else if (!targetLeaderId && this.currentUser.leaderId === l.id) {
+          opt.selected = true;
+        }
+        leaderSelect.appendChild(opt);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+
+    this.setTeamDutyMode('work');
+    document.getElementById('teamDutyNoteInput').value = '';
+    document.getElementById('teamDutyModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeTeamDutyModal() {
+    document.getElementById('teamDutyModal').classList.add('hidden');
+  }
+
+  setTeamDutyMode(mode) {
+    const workBtn = document.getElementById('teamDutyTypeWorkBtn');
+    const leaveBtn = document.getElementById('teamDutyTypeLeaveBtn');
+    const branchSection = document.getElementById('teamDutyBranchSection');
+    const leaveSection = document.getElementById('teamDutyLeaveSection');
+
+    if (mode === 'work') {
+      workBtn.className = 'py-2 px-3 border border-teal-500 bg-teal-50 text-teal-900 rounded-xl font-semibold text-center transition';
+      leaveBtn.className = 'py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition';
+      branchSection.classList.remove('hidden');
+      leaveSection.classList.add('hidden');
+      this.teamDutyMode = 'work';
+    } else {
+      workBtn.className = 'py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition';
+      leaveBtn.className = 'py-2 px-3 border border-rose-500 bg-rose-50 text-rose-900 rounded-xl font-semibold text-center transition';
+      branchSection.classList.add('hidden');
+      leaveSection.classList.remove('hidden');
+      this.teamDutyMode = 'leave';
+    }
+  }
+
+  async saveTeamDuty() {
+    const leaderId = document.getElementById('teamDutyLeaderSelect').value;
+    const date = document.getElementById('teamDutyDateInput').value;
+    const note = document.getElementById('teamDutyNoteInput').value.trim();
+
+    if (!leaderId || !date) {
+      this.showToast('error', 'กรุณาระบุข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    let payload = { leaderId, date, note };
+    if (this.teamDutyMode === 'leave') {
+      payload.isLeave = true;
+      payload.leaveType = document.getElementById('teamDutyLeaveTypeSelect').value;
+    } else {
+      const branchId = document.getElementById('teamDutyBranchSelect').value;
+      const bObj = this.branches.find(b => b.id === branchId);
+      payload.isLeave = false;
+      payload.branchId = branchId;
+      payload.branchName = bObj ? bObj.name : 'สำนักงานใหญ่';
+    }
+
+    try {
+      const res = await fetch('/api/team-duty', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกสถานะได้');
+
+      this.showToast('success', data.message);
+      this.closeTeamDutyModal();
+      if (this.selectedDate) {
+        await this.openDayModal(this.selectedDate);
+      }
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Team Leader Management (Host จัดการรายชื่อหัวหน้าทีม)
+  // -------------------------------------------------------------
+  async openTeamLeaderManageModal() {
+    const branchSelect = document.getElementById('newLeaderDefaultBranch');
+    if (branchSelect) {
+      branchSelect.innerHTML = '';
+      this.branches.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `${b.name} (${b.address || ''})`;
+        branchSelect.appendChild(opt);
+      });
+    }
+
+    const editSection = document.getElementById('editLeaderFormSection');
+    if (editSection) editSection.classList.add('hidden');
+
+    document.getElementById('newLeaderName').value = '';
+    document.getElementById('newLeaderDept').value = '';
+    document.getElementById('newLeaderLineId').value = '';
+
+    await this.renderTeamLeaderManageList();
+    document.getElementById('teamLeaderManageModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeTeamLeaderManageModal() {
+    document.getElementById('teamLeaderManageModal').classList.add('hidden');
+  }
+
+  async renderTeamLeaderManageList() {
+    const container = document.getElementById('teamLeaderListContainer');
+    container.innerHTML = '<div class="py-4 text-center text-slate-400 text-xs">กำลังโหลด...</div>';
+
+    try {
+      const res = await fetch('/api/team-leaders');
+      const data = await res.json();
+      const leaders = data.leaders || [];
+      this.currentLeadersList = leaders;
+
+      if (leaders.length === 0) {
+        container.innerHTML = '<div class="py-4 text-center text-slate-400 text-xs">ยังไม่มีรายชื่อหัวหน้าทีม</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      leaders.forEach(l => {
+        const branch = this.branches.find(b => b.id === l.defaultBranchId);
+        const branchName = branch ? branch.name : 'สำนักงานใหญ่';
+
+        const item = document.createElement('div');
+        item.className = 'p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs shadow-2xs hover:border-indigo-200 transition';
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <img src="${l.picture}" class="w-8 h-8 rounded-full bg-slate-200 border border-white shrink-0">
+            <div>
+              <div class="font-bold text-slate-800 flex items-center space-x-1.5">
+                <span>${l.name}</span>
+                <span class="text-[10px] bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.2 rounded font-medium">📍 ${branchName}</span>
+              </div>
+              <div class="text-[11px] text-slate-500">${l.department} • <code class="bg-slate-100 px-1 py-0.2 rounded text-[10px]">${l.lineUserId}</code></div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-1 shrink-0">
+            <button onclick="app.openEditTeamLeader('${l.id}')" class="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition" title="แก้ไข">
+              <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button onclick="app.deleteTeamLeader('${l.id}')" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition" title="ลบ">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+
+      lucide.createIcons();
+    } catch (e) {
+      console.error(e);
+      container.innerHTML = '<div class="py-4 text-center text-rose-500 text-xs">เกิดข้อผิดพลาดในการโหลด</div>';
+    }
+  }
+
+  openEditTeamLeader(leaderId) {
+    const leader = (this.currentLeadersList || []).find(l => l.id === leaderId);
+    if (!leader) return;
+
+    const editSection = document.getElementById('editLeaderFormSection');
+    if (!editSection) return;
+
+    document.getElementById('editLeaderId').value = leader.id;
+    document.getElementById('editLeaderName').value = leader.name;
+    document.getElementById('editLeaderDept').value = leader.department || '';
+    document.getElementById('editLeaderLineId').value = leader.lineUserId || '';
+
+    const branchSelect = document.getElementById('editLeaderDefaultBranch');
+    if (branchSelect) {
+      branchSelect.innerHTML = '';
+      this.branches.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `${b.name} (${b.address || ''})`;
+        branchSelect.appendChild(opt);
+      });
+      if (leader.defaultBranchId) {
+        branchSelect.value = leader.defaultBranchId;
+      }
+    }
+
+    editSection.classList.remove('hidden');
+    editSection.scrollIntoView({ behavior: 'smooth' });
+    lucide.createIcons();
+  }
+
+  cancelEditTeamLeader() {
+    const editSection = document.getElementById('editLeaderFormSection');
+    if (editSection) editSection.classList.add('hidden');
+  }
+
+  async saveEditTeamLeader() {
+    const leaderId = document.getElementById('editLeaderId').value;
+    const name = document.getElementById('editLeaderName').value.trim();
+    const department = document.getElementById('editLeaderDept').value.trim();
+    const defaultBranchId = document.getElementById('editLeaderDefaultBranch').value;
+    const lineUserId = document.getElementById('editLeaderLineId').value.trim();
+
+    if (!name) {
+      this.showToast('error', 'กรุณาระบุชื่อหัวหน้าทีม');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/team-leaders/${leaderId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name, department, defaultBranchId, lineUserId })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถแก้ไขข้อมูลได้');
+
+      this.showToast('success', 'บันทึกการแก้ไขหัวหน้าทีมเรียบร้อยแล้ว');
+      this.cancelEditTeamLeader();
+      await this.renderTeamLeaderManageList();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async addTeamLeader() {
+    const name = document.getElementById('newLeaderName').value.trim();
+    const department = document.getElementById('newLeaderDept').value.trim();
+    const defaultBranchId = document.getElementById('newLeaderDefaultBranch').value;
+    const lineUserId = document.getElementById('newLeaderLineId').value.trim();
+
+    if (!name) {
+      this.showToast('error', 'กรุณาระบุชื่อหัวหน้าทีม');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/team-leaders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name, department, defaultBranchId, lineUserId })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถเพิ่มหัวหน้าทีมได้');
+
+      this.showToast('success', 'เพิ่มหัวหน้าทีมเรียบร้อยแล้ว!');
+      document.getElementById('newLeaderName').value = '';
+      document.getElementById('newLeaderDept').value = '';
+      document.getElementById('newLeaderLineId').value = '';
+      await this.renderTeamLeaderManageList();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async deleteTeamLeader(leaderId) {
+    if (!confirm('คุณต้องการลบรายชื่อหัวหน้าทีมท่านนี้ใช่หรือไม่?')) return;
+
+    try {
+      const res = await fetch(`/api/team-leaders/${leaderId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถลบได้');
+
+      this.showToast('info', 'ลบหัวหน้าทีมเรียบร้อยแล้ว');
+      await this.renderTeamLeaderManageList();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Settings Modal (ตั้งค่าระบบ & ข้อมูล Host & ที่อยู่ปกติ)
+  // -------------------------------------------------------------
+  async openSettingsModal() {
+    try {
+      const branchSelect = document.getElementById('settingHostDefaultBranch');
+      if (branchSelect) {
+        branchSelect.innerHTML = '';
+        this.branches.forEach(br => {
+          const opt = document.createElement('option');
+          opt.value = br.id;
+          opt.textContent = `${br.name} (${br.address || ''})`;
+          branchSelect.appendChild(opt);
+        });
+      }
+
+      const res = await fetch('/api/settings');
+      const data = await res.json();
+      const s = data.settings || {};
+
+      document.getElementById('settingHostName').value = s.hostName || '';
+      if (branchSelect && s.defaultBranchId) {
+        branchSelect.value = s.defaultBranchId;
+      }
+      document.getElementById('settingSlotDuration').value = s.slotDurationMinutes || 60;
+      document.getElementById('settingWeekendOpen').checked = !!s.weekendOpen;
+
+      document.getElementById('settingsModal').classList.remove('hidden');
+      lucide.createIcons();
+    } catch (e) {
+      this.showToast('error', 'ไม่สามารถโหลดการตั้งค่าได้');
+    }
+  }
+
+  closeSettingsModal() {
+    document.getElementById('settingsModal').classList.add('hidden');
+  }
+
+  async saveSettings() {
+    const hostName = document.getElementById('settingHostName').value.trim();
+    const defaultBranchId = document.getElementById('settingHostDefaultBranch') ? document.getElementById('settingHostDefaultBranch').value : undefined;
+    const slotDurationMinutes = document.getElementById('settingSlotDuration').value;
+    const weekendOpen = document.getElementById('settingWeekendOpen').checked;
+
+    if (!hostName) {
+      this.showToast('error', 'กรุณาระบุชื่อเจ้าของคิว (Host)');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({
+          hostName,
+          defaultBranchId,
+          slotDurationMinutes: parseInt(slotDurationMinutes),
+          weekendOpen
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถบันทึกการตั้งค่าได้');
+
+      this.showToast('success', 'บันทึกการตั้งค่าเรียบร้อยแล้ว');
+      this.closeSettingsModal();
+      await this.loadMonthCalendar();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Event Types Management (จัดการหมวดหมู่งาน Event)
+  // -------------------------------------------------------------
+  async openEventTypeModal() {
+    await this.renderEventTypeList();
+    const input = document.getElementById('newEventTypeName');
+    if (input) input.value = '';
+    document.getElementById('eventTypeModal').classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeEventTypeModal() {
+    document.getElementById('eventTypeModal').classList.add('hidden');
+  }
+
+  async renderEventTypeList() {
+    const container = document.getElementById('eventTypeListContainer');
+    if (!container) return;
+    container.innerHTML = '<div class="py-4 text-center text-slate-400 text-xs">กำลังโหลด...</div>';
+
+    try {
+      const res = await fetch('/api/event-types');
+      const data = await res.json();
+      this.eventTypes = data.eventTypes || [];
+
+      if (this.eventTypes.length === 0) {
+        container.innerHTML = '<div class="py-4 text-center text-slate-400 text-xs">ยังไม่มีหมวดหมู่ Event</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      this.eventTypes.forEach((type, index) => {
+        const item = document.createElement('div');
+        item.className = 'p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs shadow-2xs hover:border-purple-300 transition';
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-6 h-6 rounded-lg bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-[10px] shrink-0">${index + 1}</span>
+            <span class="font-semibold text-slate-800" id="eventTypeName_${index}">${type}</span>
+          </div>
+          <div class="flex items-center space-x-1 shrink-0">
+            <button onclick="app.editEventType(${index})" class="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition" title="แก้ไข">
+              <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+            </button>
+            <button onclick="app.deleteEventType(${index})" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition" title="ลบ">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+
+      lucide.createIcons();
+    } catch (e) {
+      console.error(e);
+      container.innerHTML = '<div class="py-4 text-center text-rose-500 text-xs">เกิดข้อผิดพลาดในการโหลด</div>';
+    }
+  }
+
+  async addEventType() {
+    const input = document.getElementById('newEventTypeName');
+    const name = input ? input.value.trim() : '';
+
+    if (!name) {
+      this.showToast('error', 'กรุณาระบุชื่อหมวดหมู่ Event');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/event-types', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถเพิ่มหมวดหมู่ได้');
+
+      this.showToast('success', 'เพิ่มหมวดหมู่ Event เรียบร้อยแล้ว!');
+      if (input) input.value = '';
+      this.eventTypes = data.eventTypes || [];
+      this.populateEventTypeDropdown();
+      await this.renderEventTypeList();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async editEventType(index) {
+    const currentName = this.eventTypes[index];
+    const newName = prompt('แก้ไขชื่อหมวดหมู่ Event:', currentName);
+    if (newName === null) return;
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      this.showToast('error', 'ชื่อหมวดหมู่ต้องไม่เว้นว่าง');
+      return;
+    }
+    if (trimmed === currentName) return;
+
+    try {
+      const res = await fetch(`/api/event-types/${index}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ name: trimmed })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถแก้ไขหมวดหมู่ได้');
+
+      this.showToast('success', 'แก้ไขหมวดหมู่เรียบร้อยแล้ว!');
+      this.eventTypes = data.eventTypes || [];
+      this.populateEventTypeDropdown();
+      await this.renderEventTypeList();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async deleteEventType(index) {
+    const currentName = this.eventTypes[index];
+    if (!confirm(`คุณต้องการลบหมวดหมู่ "${currentName}" ใช่หรือไม่?`)) return;
+
+    try {
+      const res = await fetch(`/api/event-types/${index}`, {
+        method: 'DELETE',
+        headers: {
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถลบหมวดหมู่ได้');
+
+      this.showToast('info', 'ลบหมวดหมู่เรียบร้อยแล้ว');
+      this.eventTypes = data.eventTypes || [];
+      this.populateEventTypeDropdown();
+      await this.renderEventTypeList();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  // -------------------------------------------------------------
+  // UI Helpers & Toasts
+  // -------------------------------------------------------------
+  showToast(type, message) {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    const isError = type === 'error';
+    const isSuccess = type === 'success';
+
+    toast.className = `p-3.5 rounded-2xl shadow-xl border text-xs font-bold flex items-center justify-between pointer-events-auto transform transition-all duration-300 ${
+      isError ? 'bg-rose-600 text-white border-rose-700' :
+      isSuccess ? 'bg-emerald-600 text-white border-emerald-700' :
+      'bg-slate-800 text-white border-slate-900'
+    }`;
+
+    toast.innerHTML = `
+      <div class="flex items-center space-x-2">
+        <i data-lucide="${isError ? 'alert-circle' : isSuccess ? 'check-circle' : 'info'}" class="w-4 h-4 shrink-0"></i>
+        <span>${message}</span>
+      </div>
+    `;
+
+    container.appendChild(toast);
+    lucide.createIcons();
+
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+}
+
+// Instantiate App
+const app = new MeetingQueueApp();

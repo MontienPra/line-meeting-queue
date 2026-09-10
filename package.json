@@ -1,0 +1,17 @@
+{
+  "name": "line-meeting-queue",
+  "version": "1.0.0",
+  "description": "LINE LIFF Meeting Queue App with 4-Status Calendar, Branch/Leave Schedule, and Role-Based Permissions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/api-test.js"
+  },
+  "keywords": ["line", "liff", "meeting", "calendar", "booking"],
+  "author": "Montien",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
