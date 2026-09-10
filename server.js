@@ -25,56 +25,50 @@ function getDbFile() {
 app.use(cors());
 app.use(express.json());
 
-// Serve static files with no-cache headers
-app.use(express.static(path.join(__dirname, 'public'), { etag: false, maxAge: 0 }));
-app.use(express.static(__dirname, { etag: false, maxAge: 0 }));
-
-// Root route: Serve newest index.html (whether in public/ or root)
+// Explicit routes for root-uploaded files take priority over any subfolder files:
 app.get('/', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   const rootIndex = path.join(__dirname, 'index.html');
   const publicIndex = path.join(__dirname, 'public', 'index.html');
-  if (fs.existsSync(rootIndex) && fs.existsSync(publicIndex)) {
-    const mRoot = fs.statSync(rootIndex).mtimeMs;
-    const mPub = fs.statSync(publicIndex).mtimeMs;
-    return res.sendFile(mRoot >= mPub ? rootIndex : publicIndex);
-  }
   if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
   if (fs.existsSync(publicIndex)) return res.sendFile(publicIndex);
   res.send('LINE Meeting Queue App Running');
 });
 
-// App JS route: Serve newest app.js (whether in public/js/, js/, or root)
+app.get('/index.html', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const rootIndex = path.join(__dirname, 'index.html');
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(rootIndex)) return res.sendFile(rootIndex);
+  if (fs.existsSync(publicIndex)) return res.sendFile(publicIndex);
+  res.status(404).send('index.html not found');
+});
+
+// App JS route: Serve root app.js first, then public/js/app.js
 app.get('/js/app.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  const candidates = [
-    path.join(__dirname, 'public', 'js', 'app.js'),
-    path.join(__dirname, 'js', 'app.js'),
-    path.join(__dirname, 'app.js')
-  ].filter(p => fs.existsSync(p));
-
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-    return res.sendFile(candidates[0]);
-  }
+  const rootApp = path.join(__dirname, 'app.js');
+  const publicApp = path.join(__dirname, 'public', 'js', 'app.js');
+  const jsApp = path.join(__dirname, 'js', 'app.js');
+  if (fs.existsSync(rootApp)) return res.sendFile(rootApp);
+  if (fs.existsSync(publicApp)) return res.sendFile(publicApp);
+  if (fs.existsSync(jsApp)) return res.sendFile(jsApp);
   res.status(404).send('app.js not found');
 });
 
-// CSS route: Serve newest styles.css
+// CSS route
 app.get('/css/styles.css', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  const candidates = [
-    path.join(__dirname, 'public', 'css', 'styles.css'),
-    path.join(__dirname, 'css', 'styles.css'),
-    path.join(__dirname, 'styles.css')
-  ].filter(p => fs.existsSync(p));
-
-  if (candidates.length > 0) {
-    candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-    return res.sendFile(candidates[0]);
-  }
+  const rootCss = path.join(__dirname, 'styles.css');
+  const publicCss = path.join(__dirname, 'public', 'css', 'styles.css');
+  if (fs.existsSync(rootCss)) return res.sendFile(rootCss);
+  if (fs.existsSync(publicCss)) return res.sendFile(publicCss);
   res.status(404).send('styles.css not found');
 });
+
+// Serve static assets without intercepting index
+app.use(express.static(path.join(__dirname, 'public'), { index: false, etag: false, maxAge: 0 }));
+app.use(express.static(__dirname, { index: false, etag: false, maxAge: 0 }));
 
 // -------------------------------------------------------------
 // Database Helper
