@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LINE Meeting Queue - ระบบลงคิวประชุม</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- LINE LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="min-h-screen pb-16">
+
+  <!-- Top App Navigation Bar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-sm shadow-emerald-200">
+          <i data-lucide="calendar-check" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-slate-800 text-base sm:text-lg leading-tight">ระบบลงคิว Meeting</h1>
+          <p id="hostNameHeader" class="text-xs text-slate-500 font-medium">คิวของ: คุณมณเทียร (Manager)</p>
+        </div>
+      </div>
+
+      <!-- User Profile & Dev Role Switcher -->
+      <div class="flex items-center space-x-2">
+        <div class="relative">
+          <button id="userMenuBtn" class="flex items-center space-x-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-full py-1 px-2.5 transition">
+            <img id="userAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Somchai" alt="Profile" class="w-7 h-7 rounded-full bg-slate-200 border border-white shadow-xs object-cover">
+            <span id="userName" class="text-xs font-semibold text-slate-700 max-w-[90px] sm:max-w-[130px] truncate">สมชาย (IT)</span>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
+          </button>
+
+          <!-- Dropdown Menu for Testing & LIFF Config -->
+          <div id="userDropdown" class="hidden absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50">
+            <div class="px-3 py-2 border-b border-slate-100">
+              <div class="flex items-center justify-between">
+                <p class="text-xs text-slate-400 font-medium uppercase tracking-wider">โหมดจำลองผู้ใช้ (Dev Switcher)</p>
+                <span id="userLiveBadge" class="hidden text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded-full font-bold">🟢 LINE Live</span>
+              </div>
+              <p class="text-xs text-slate-600 mt-0.5">ใช้สลับเพื่อทดสอบสิทธิ์การจอง & การจัดการ</p>
+              <div id="userLineIdSection" class="hidden mt-1.5 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] flex items-center justify-between">
+                <span class="text-slate-600 truncate mr-1 font-mono" id="userLineIdDisplay">LINE ID: -</span>
+                <button onclick="app.copyMyLineId()" class="text-indigo-600 hover:text-indigo-800 font-bold shrink-0 bg-white px-1.5 py-0.5 border border-indigo-200 rounded">คัดลอก</button>
+              </div>
+            </div>
+            
+            <div id="devTestAccountsSection" class="py-1">
+              <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">บัญชีทดสอบระบบ (Dev Simulator)</div>
+              <button onclick="app.switchUser('employee1')" class="w-full text-left px-3 py-1.5 text-xs flex items-center space-x-2.5 hover:bg-slate-50 transition text-slate-700">
+                <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+                <span>พนักงาน: สมชาย ใจดี (ฝ่าย IT)</span>
+              </button>
+              <button onclick="app.switchUser('employee2')" class="w-full text-left px-3 py-1.5 text-xs flex items-center space-x-2.5 hover:bg-slate-50 transition text-slate-700">
+                <span class="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
+                <span>พนักงาน: สมหญิง รักเรียน (การตลาด)</span>
+              </button>
+            </div>
+
+            <!-- รายชื่อหัวหน้าทีม (ซิงค์อัตโนมัติตามฐานข้อมูล) -->
+            <div class="border-t border-slate-100 py-1">
+              <div class="px-3 py-1 text-[10px] font-bold text-teal-700 uppercase tracking-wider flex items-center justify-between">
+                <span>หัวหน้าทีม (Team Leaders)</span>
+                <span id="userDropdownLeadersCount" class="text-[9px] bg-teal-50 text-teal-600 px-1.5 py-0.2 rounded-full font-medium">0 ท่าน</span>
+              </div>
+              <div id="userDropdownLeaders" class="space-y-0.5 max-h-48 overflow-y-auto">
+                <!-- Dynamically populated by JS -->
+              </div>
+            </div>
+
+            <!-- เจ้าของคิว (Host) -->
+            <div class="border-t border-slate-100 pt-1">
+              <button id="userDropdownHostBtn" onclick="app.switchUser('host')" class="w-full text-left px-3 py-2 text-xs flex items-center space-x-2.5 hover:bg-amber-50 text-amber-900 transition font-medium">
+                <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                <span id="userDropdownHostName" class="truncate">👑 เจ้าของคิว (Host / คุณมณเทียร)</span>
+              </button>
+            </div>
+
+            <div class="border-t border-slate-100 pt-1 mt-1">
+              <button onclick="app.openLiffConfigModal()" class="w-full text-left px-3 py-2 text-xs flex items-center space-x-2.5 text-emerald-600 hover:bg-emerald-50 transition">
+                <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                <span>ตั้งค่า LINE LIFF ID (Live Mode)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-4xl mx-auto px-4 flex border-t border-slate-100">
+      <button id="tabCalendarBtn" onclick="app.switchTab('calendar')" class="flex-1 py-2.5 text-center text-xs sm:text-sm font-semibold border-b-2 border-emerald-500 text-emerald-600 flex items-center justify-center space-x-1.5">
+        <i data-lucide="calendar" class="w-4 h-4"></i>
+        <span>ปฏิทินลงคิว</span>
+      </button>
+      <button id="tabMyBookingsBtn" onclick="app.switchTab('my-bookings')" class="flex-1 py-2.5 text-center text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center space-x-1.5">
+        <i data-lucide="clock" class="w-4 h-4"></i>
+        <span>คิวของฉัน</span>
+        <span id="myBookingsBadge" class="hidden ml-1 px-1.5 py-0.2 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">0</span>
+      </button>
+      <button id="tabHostBtn" onclick="app.switchTab('host')" class="flex-1 py-2.5 text-center text-xs sm:text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center space-x-1.5">
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+        <span id="tabHostBtnText">จัดการคิว (Host)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-4xl mx-auto px-3 sm:px-4 pt-4">
+
+    <!-- 1. TAB: CALENDAR VIEW -->
+    <section id="tabCalendar" class="space-y-4">
+
+      <!-- Status Legend (แถบอธิบายสถานะสีตามที่ต้องการ) -->
+      <div class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-xs">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center space-x-1.5">
+            <i data-lucide="info" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span>สเตตัสสีของวัน</span>
+          </span>
+          <span class="text-[11px] text-slate-400">กดที่วันที่เพื่อดูและลงคิว</span>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div class="flex items-center space-x-2 bg-emerald-50/70 border border-emerald-300/80 px-2.5 py-1.5 rounded-xl text-emerald-800">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-xs"></span>
+            <div class="leading-none">
+              <div class="font-semibold text-[11px] sm:text-xs">สีเขียว</div>
+              <div class="text-[10px] text-emerald-600">ยังไม่ลงคิว / ว่าง</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 bg-amber-50/70 border border-amber-300/80 px-2.5 py-1.5 rounded-xl text-amber-800">
+            <span class="w-3 h-3 rounded-full bg-amber-400 shadow-xs"></span>
+            <div class="leading-none">
+              <div class="font-semibold text-[11px] sm:text-xs">สีเหลือง</div>
+              <div class="text-[10px] text-amber-600">ลงคิวแล้ว</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 bg-rose-50/70 border border-rose-300/80 px-2.5 py-1.5 rounded-xl text-rose-800">
+            <span class="w-3 h-3 rounded-full bg-rose-500 shadow-xs"></span>
+            <div class="leading-none">
+              <div class="font-semibold text-[11px] sm:text-xs">สีแดง</div>
+              <div class="text-[10px] text-rose-600">คิวเต็ม</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 bg-slate-200 border border-slate-400 px-2.5 py-1.5 rounded-xl text-slate-800 shadow-xs">
+            <span class="w-3 h-3 rounded-full bg-slate-500 shadow-xs"></span>
+            <div class="leading-none">
+              <div class="font-bold text-[11px] sm:text-xs">สีเทาเข้ม</div>
+              <div class="text-[10px] text-slate-700">ปิดรับคิว / ลาพักร้อน</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Team Member Color Legend (แถบสัญลักษณ์สีประจำตัวของแต่ละคน) -->
+      <div id="teamLegendBar" class="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div class="flex items-center space-x-2 shrink-0">
+          <div class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <i data-lucide="palette" class="w-3.5 h-3.5"></i>
+          </div>
+          <span class="text-xs font-bold text-slate-700">แถบสีประจำตัวบนปฏิทิน:</span>
+        </div>
+        <div id="teamLegendItems" class="flex flex-wrap items-center gap-1.5 text-xs">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Month Navigation Card -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div class="px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="calendar" class="w-5 h-5 opacity-80"></i>
+            <h2 id="calendarMonthTitle" class="font-bold text-base sm:text-lg">กันยายน 2569</h2>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <button onclick="app.todayMonth()" class="px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-xs font-semibold transition">
+              วันนี้
+            </button>
+            <button onclick="app.prevMonth()" class="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition" title="เดือนก่อนหน้า">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <button onclick="app.nextMonth()" class="p-1.5 bg-white/15 hover:bg-white/25 rounded-lg transition" title="เดือนถัดไป">
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Day of Week Headers -->
+        <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/70 text-center py-2 text-[11px] sm:text-xs font-bold text-slate-600">
+          <div class="text-rose-500">อา.</div>
+          <div>จ.</div>
+          <div>อ.</div>
+          <div>พ.</div>
+          <div>พฤ.</div>
+          <div>ศ.</div>
+          <div class="text-rose-500">ส.</div>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div id="calendarGrid" class="grid grid-cols-7 gap-1 sm:gap-1.5 p-1.5 sm:p-2.5 bg-slate-50/40">
+          <!-- Calendar cells rendered by JS -->
+          <div class="col-span-7 py-12 text-center text-slate-400 text-sm">กำลังโหลดปฏิทิน...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TAB: MY BOOKINGS -->
+    <section id="tabMyBookings" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <i data-lucide="bookmark-check" class="w-4 h-4"></i>
+            </div>
+            <h2 class="font-bold text-slate-800 text-base">คิวการประชุมของฉัน</h2>
+          </div>
+          <span class="text-xs text-slate-400 font-medium">เฉพาะคิวที่คุณลงไว้</span>
+        </div>
+
+        <div id="myBookingsList" class="space-y-3">
+          <!-- Bookings list rendered by JS -->
+          <div class="text-center py-10 text-slate-400 text-sm">ยังไม่มีรายการลงคิว</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. TAB: HOST MANAGEMENT PANEL -->
+    <section id="tabHost" class="hidden space-y-4">
+      <!-- Host Header & Guidance -->
+      <div id="hostHeaderBanner" class="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-4 text-white shadow-md">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span id="hostRoleBadge" class="inline-block px-2.5 py-0.5 bg-white/20 rounded-full text-[11px] font-bold uppercase tracking-wider mb-1">👑 แผงควบคุมผู้ดูแลระบบ (Host Control)</span>
+            <h2 id="hostPanelTitle" class="font-bold text-lg leading-tight">จัดการระบบและรายชื่อคิวทั้งหมด</h2>
+            <p id="hostPanelDesc" class="text-xs text-amber-100 mt-1">
+              ✨ <strong>การจัดการประจำวัน:</strong> คุณและหัวหน้าทีมสามารถกดที่วันที่ในหน้าปฏิทินเพื่อเปลี่ยนสาขา แจ้งวันลา หรือบล็อก/ปลดล็อกคิวได้ทันที
+            </p>
+          </div>
+          <button onclick="app.switchTab('calendar')" class="px-3.5 py-2 bg-white text-amber-900 hover:bg-amber-50 font-bold rounded-xl text-xs shadow-xs transition flex items-center space-x-1.5 self-start sm:self-center shrink-0">
+            <i data-lucide="calendar" class="w-4 h-4 text-amber-600"></i>
+            <span>ไปที่หน้าปฏิทิน</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Administration Settings Grid (สาขา, หัวหน้าทีม, หมวดหมู่งาน, ตั้งค่าเวลา/Host) -->
+      <div id="hostAdminSettingsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- Card 1: Branch Management -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-slate-800 font-bold text-sm mb-1.5">
+              <i data-lucide="building-2" class="w-4 h-4 text-teal-600"></i>
+              <span>จัดการรายชื่อสาขา</span>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">เพิ่ม ลบ หรือแก้ไขชื่อสาขาและสถานที่นัดพบ</p>
+          </div>
+          <button onclick="app.openBranchModal()" class="w-full py-2 bg-teal-50 hover:bg-teal-100 text-teal-700 font-semibold rounded-xl text-xs border border-teal-200 transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="edit-3" class="w-4 h-4"></i>
+            <span>จัดการสาขา</span>
+          </button>
+        </div>
+
+        <!-- Card 2: Team Leaders Management -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-slate-800 font-bold text-sm mb-1.5">
+              <i data-lucide="users" class="w-4 h-4 text-indigo-600"></i>
+              <span>จัดการรายชื่อหัวหน้าทีม</span>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">เพิ่ม/ลบ/แก้ไขข้อมูลและสาขาประจำของหัวหน้าทีม</p>
+          </div>
+          <button onclick="app.openTeamLeaderManageModal()" class="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-xl text-xs border border-indigo-200 transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="user-plus" class="w-4 h-4"></i>
+            <span>จัดการหัวหน้าทีม</span>
+          </button>
+        </div>
+
+        <!-- Card 3: Event Types Management -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-slate-800 font-bold text-sm mb-1.5">
+              <i data-lucide="tag" class="w-4 h-4 text-purple-600"></i>
+              <span>หมวดหมู่งาน Event</span>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">เพิ่ม แก้ไข หรือลบหมวดหมู่การประชุม</p>
+          </div>
+          <button onclick="app.openEventTypeModal()" class="w-full py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold rounded-xl text-xs border border-purple-200 transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="edit-3" class="w-4 h-4"></i>
+            <span>จัดการหมวดหมู่</span>
+          </button>
+        </div>
+
+        <!-- Card 4: Working Hours & Host Settings -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center space-x-2 text-slate-800 font-bold text-sm mb-1.5">
+              <i data-lucide="sliders" class="w-4 h-4 text-amber-600"></i>
+              <span>ตั้งค่าระบบ & Host</span>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">แก้ไขชื่อ Host, สาขาประจำ, และเวลาทำการ</p>
+          </div>
+          <button onclick="app.openSettingsModal()" class="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold rounded-xl text-xs border border-amber-200 transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            <span>ตั้งค่าระบบ & Host</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- All Bookings List for Host -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center space-x-2">
+            <div class="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+              <i data-lucide="users" class="w-4 h-4"></i>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm sm:text-base">รายชื่อพนักงานที่ลงคิวทั้งหมด</h3>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span id="hostTotalBookingsCount" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">0 รายการ</span>
+            <div id="hostAdminActionBtns" class="flex items-center space-x-1.5">
+              <button onclick="app.exportDatabase()" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="ดาวน์โหลดไฟล์ฐานข้อมูลล่าสุด (Backup) เก็บไว้ในคอมพิวเตอร์">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">สำรองข้อมูล</span>
+              </button>
+              <label class="cursor-pointer px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="กู้คืนฐานข้อมูลจากไฟล์ database.json">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">กู้คืนข้อมูล</span>
+                <input type="file" accept=".json" class="hidden" onchange="app.importDatabase(event)">
+              </label>
+              <button id="hostClearTestBookingsBtn" onclick="app.clearTestBookings()" class="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-2xs" title="ล้างข้อมูลการจองทดสอบเพื่อเตรียมใช้งานจริง">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>ล้างคิวทดสอบ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="hostBookingsList" class="space-y-3">
+          <!-- All bookings rendered by JS -->
+          <div class="text-center py-10 text-slate-400 text-sm">ไม่มีคิวที่ลงไว้</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 1: Day Details & Booking Modal                          -->
+  <!-- ============================================================= -->
+  <div id="dayModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] flex flex-col modal-content-animated overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div>
+          <span id="modalDateBadge" class="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-0.5">สถานะ</span>
+          <h3 id="modalDateTitle" class="font-bold text-slate-800 text-base sm:text-lg">วันพุธที่ 10 กันยายน 2569</h3>
+        </div>
+        <button onclick="app.closeDayModal()" class="w-8 h-8 rounded-full bg-slate-200/80 hover:bg-slate-300 flex items-center justify-center text-slate-600 transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-5 overflow-y-auto space-y-4">
+
+        <!-- 1. แผงควบคุม Host ประจำวันนี้ (แสดงเมื่อผู้ใช้เป็น Host) -->
+        <div id="hostInlineManageBox" class="hidden border border-amber-300/80 bg-gradient-to-br from-amber-50/60 to-orange-50/40 rounded-2xl p-4 space-y-3.5 shadow-sm">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-amber-200/70">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                👑
+              </div>
+              <div>
+                <h4 class="font-bold text-slate-800 text-xs sm:text-sm">แผงจัดการคิวของ Host (ประจำวันนี้)</h4>
+                <div id="hostDayBlockStatusText" class="text-[11px] text-slate-600">สถานะ: เปิดรับคิวตามปกติ</div>
+              </div>
+            </div>
+            <!-- ปุ่มสลับ 1-Click บล็อกทั้งวัน / ปลดล็อกคิว (Strict Host Only) -->
+            <button id="toggleDayBlockBtn" onclick="app.toggleDayBlock()" class="px-3.5 py-1.5 font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5 bg-rose-600 hover:bg-rose-700 text-white self-stretch sm:self-auto">
+              <i data-lucide="slash" class="w-3.5 h-3.5"></i>
+              <span id="toggleDayBlockBtnText">บล็อกคิวทั้งวัน (ปิดรับคิว)</span>
+            </button>
+          </div>
+
+          <!-- เมนูย่อยสำหรับ Host: เลือกสาขา/ลา หรือ บล็อกช่วงเวลา -->
+          <div class="flex border-b border-amber-200/80 text-xs gap-2">
+            <button type="button" id="tabHostSubDutyBtn" onclick="app.switchHostSubTab('duty')" class="pb-2 px-2 font-bold border-b-2 border-amber-600 text-amber-900 transition flex items-center space-x-1">
+              <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+              <span>กำหนดสาขา / แจ้งวันลา</span>
+            </button>
+            <button type="button" id="tabHostSubBlockBtn" onclick="app.switchHostSubTab('block')" class="pb-2 px-2 font-medium text-slate-500 hover:text-slate-800 border-b-2 border-transparent transition flex items-center space-x-1">
+              <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+              <span>บล็อกช่วงเวลาเฉพาะชั่วโมง</span>
+            </button>
+          </div>
+
+          <!-- แท็บย่อย 1: กำหนดสาขา / ลาพักร้อนของ Host -->
+          <div id="hostSubTabDuty" class="space-y-3 pt-0.5 text-xs">
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" id="inlineHostModeWork" onclick="app.setInlineHostDutyMode('work')" class="py-2 px-2.5 border border-amber-500 bg-amber-100/70 text-amber-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5">
+                <span>🏢 ไปปฏิบัติงานที่สาขา</span>
+              </button>
+              <button type="button" id="inlineHostModeLeave" onclick="app.setInlineHostDutyMode('leave')" class="py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50">
+                <span>🏖️ แจ้งวันลา / On Sales</span>
+              </button>
+            </div>
+
+            <div id="inlineHostBranchSelectRow">
+              <label class="block font-bold text-slate-700 mb-1">เลือกสาขาที่ Host ปฏิบัติงาน</label>
+              <select id="inlineHostBranchSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+                <!-- Branches populated by JS -->
+              </select>
+            </div>
+
+            <!-- สลับทำงานครึ่งวัน (เปิดเฉพาะช่วงเช้า 08:00 - 12:00 น. รองรับเสาร์ต้น/ปลายเดือน) -->
+            <div id="inlineHostHalfDayRow" class="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
+              <div class="pr-2">
+                <div class="font-bold text-slate-800 text-xs flex items-center space-x-1">
+                  <span>⏰ ทำงานครึ่งวัน (08:00 - 12:00 น.)</span>
+                </div>
+                <div class="text-[10px] text-slate-500">เปิดรับคิวช่วงเช้า 4 ช่วงเวลา (เหมาะสำหรับวันเสาร์ต้น/ปลายเดือน)</div>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" id="inlineHostHalfDay" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+            </div>
+
+            <div id="inlineHostLeaveSelectRow" class="hidden">
+              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
+              <select id="inlineHostLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+                <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
+                <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
+                <option value="ลากิจ">📝 ลากิจ</option>
+                <option value="ลาป่วย">🏥 ลาป่วย</option>
+                <option value="อบรมภายนอก">📚 อบรมภายนอก</option>
+              </select>
+              <p class="text-[11px] text-amber-800 mt-1 font-medium">* ระบบจะเปลี่ยนสถานะเป็นสีเทา (ปิดรับคิว) ให้อัตโนมัติ</p>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">หมายเหตุสถานที่ / ภารกิจ</label>
+              <input type="text" id="inlineHostNoteInput" placeholder="เช่น ไม่ระบุสถานที่ หรือ ประชุมเช้า" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+            </div>
+
+            <div class="space-y-2 pt-1">
+              <button onclick="app.saveInlineHostDuty()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>บันทึกสถานะของ Host</span>
+              </button>
+              <button type="button" onclick="app.clearInlineHostDuty()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 border border-slate-200" title="ล้างการตั้งค่าของวันนี้ กลับเป็นสถานะว่างปกติโดยไม่แสดงป้ายสถานที่">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-500"></i>
+                <span>🧹 ล้างสถานะ / รีเซ็ตเป็นวันว่างปกติ (ไม่ระบุสถานที่)</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- แท็บย่อย 2: บล็อกช่วงเวลาเฉพาะชั่วโมงของ Host -->
+          <div id="hostSubTabBlock" class="hidden space-y-3 pt-0.5 text-xs">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">เวลาเริ่ม</label>
+                <input type="time" id="inlineBlockStartTime" value="10:00" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">เวลาสิ้นสุด</label>
+                <input type="time" id="inlineBlockEndTime" value="12:00" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+              </div>
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">เหตุผลที่ไม่ว่าง / ภารกิจ</label>
+              <input type="text" id="inlineBlockReason" placeholder="เช่น ติดประชุมฝ่ายบริหาร, ตรวจงานนอกสถานที่" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+            </div>
+            <button onclick="app.saveInlineHostBlock()" class="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+              <i data-lucide="slash" class="w-4 h-4"></i>
+              <span>บล็อกช่วงเวลานี้</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. แบนเนอร์แสดงสถานที่/วันลาของ Host สำหรับทุกคนที่เปิดดู -->
+        <div id="modalDutyBanner" class="p-3.5 rounded-2xl border flex items-start space-x-3 bg-blue-50 border-blue-200 text-blue-900">
+          <i data-lucide="map-pin" class="w-5 h-5 text-blue-600 mt-0.5 shrink-0"></i>
+          <div class="text-xs leading-relaxed">
+            <div class="font-bold text-sm" id="modalDutyTitle">สถานที่ของหัวหน้า: สำนักงานใหญ่</div>
+            <div id="modalDutyDesc" class="text-blue-700/80">อาคาร A ชั้น 5 ห้องประชุม 501</div>
+          </div>
+        </div>
+
+        <!-- 3. แผงบันทึกสถานะสำหรับหัวหน้าทีม (Team Leader Inline Management) -->
+        <div id="leaderInlineManageBox" class="hidden border border-teal-200 bg-teal-50/50 rounded-2xl p-4 space-y-3 shadow-xs">
+          <div class="flex items-center justify-between pb-2 border-b border-teal-200/70">
+            <div class="flex items-center space-x-2">
+              <div class="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
+                👤
+              </div>
+              <h4 class="font-bold text-slate-800 text-xs sm:text-sm">แจ้งสาขา / วันลาของหัวหน้าทีม (ประจำวันนี้)</h4>
+            </div>
+            <button onclick="app.toggleLeaderInlineBox(false)" class="text-slate-400 hover:text-slate-600 p-1">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <div class="space-y-2.5 text-xs">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">หัวหน้าทีม</label>
+              <select id="inlineLeaderSelect" onchange="app.onInlineLeaderSelectChange()" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-teal-500">
+                <!-- Populated by JS -->
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" id="inlineLeaderModeWork" onclick="app.setInlineLeaderDutyMode('work')" class="py-2 px-2.5 border border-teal-500 bg-teal-100 text-teal-900 rounded-xl font-bold text-center transition flex items-center justify-center space-x-1.5">
+                <span>🏢 ไปสาขา / WFH</span>
+              </button>
+              <button type="button" id="inlineLeaderModeLeave" onclick="app.setInlineLeaderDutyMode('leave')" class="py-2 px-2.5 border border-slate-200 bg-white text-slate-600 rounded-xl font-semibold text-center transition flex items-center justify-center space-x-1.5 hover:bg-slate-50">
+                <span>🏖️ ลา / On Sales</span>
+              </button>
+            </div>
+
+            <div id="inlineLeaderBranchSelectRow">
+              <label class="block font-bold text-slate-700 mb-1">เลือกสาขาที่ไปปฏิบัติงาน</label>
+              <select id="inlineLeaderBranchSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-teal-500">
+                <!-- Populated by JS -->
+              </select>
+            </div>
+
+            <div id="inlineLeaderLeaveSelectRow" class="hidden">
+              <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
+              <select id="inlineLeaderLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-teal-500">
+                <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
+                <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
+                <option value="ลากิจ">📝 ลากิจ</option>
+                <option value="ลาป่วย">🏥 ลาป่วย</option>
+                <option value="อบรมภายนอก">📚 อบรมภายนอก</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">หมายเหตุ / ช่องทางติดต่อด่วน</label>
+              <input type="text" id="inlineLeaderNoteInput" placeholder="เช่น ประชุมหน้างานตลอดเช้า, โทรเบอร์มือถือ" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white">
+            </div>
+
+            <div class="space-y-2 pt-1">
+              <button onclick="app.saveInlineLeaderDuty()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>บันทึกสถานะหัวหน้าทีม</span>
+              </button>
+              <button type="button" onclick="app.clearInlineLeaderDuty()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition flex items-center justify-center space-x-1.5 border border-slate-200" title="ล้างการตั้งค่าของวันนี้ กลับเป็นสถานะว่างปกติโดยไม่แสดงป้ายสถานที่">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-slate-500"></i>
+                <span>🧹 ล้างสถานะ / รีเซ็ตเป็นวันว่างปกติ (ไม่ระบุสถานที่)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. รายชื่อสถานะหัวหน้าทีมประจำวันนี้ (Team Leaders Status Section) -->
+        <div id="modalTeamLeadersSection" class="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
+              <i data-lucide="users" class="w-3.5 h-3.5 text-teal-600"></i>
+              <span>สถานะหัวหน้าทีมประจำวันนี้</span>
+            </span>
+            <button id="btnLeaderUpdateSelf" onclick="app.toggleLeaderInlineBox(true)" class="hidden px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition flex items-center space-x-1">
+              <i data-lucide="edit-3" class="w-3 h-3"></i>
+              <span>แจ้ง/แก้ไขสถานะของฉัน</span>
+            </button>
+          </div>
+          <div id="modalTeamLeadersList" class="space-y-1.5">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Available Slots Section -->
+        <div>
+          <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+            <span>เลือกรอบเวลาที่ต้องการลงคิว</span>
+            <span class="text-[11px] font-normal text-slate-400">รอบละ 60 นาที</span>
+          </h4>
+
+          <div id="modalSlotsList" class="space-y-2">
+            <!-- Slots rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Booking Form Container (Appears when a slot is chosen) -->
+        <div id="bookingFormContainer" class="hidden pt-3 border-t border-slate-200/80 space-y-3">
+          <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+              <span class="text-xs font-bold text-emerald-900">รอบเวลาที่เลือก:</span>
+            </div>
+            <span id="selectedSlotBadge" class="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold">10:00 - 11:00</span>
+          </div>
+
+          <!-- Event Title (ชื่องาน) -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">
+              ชื่องาน / หัวข้อการประชุม <span class="text-rose-500">*</span>
+            </label>
+            <input type="text" id="bookingEventTitle" placeholder="เช่น สรุปความคืบหน้าโปรเจกต์, ปรึกษางานงวด 2" 
+              class="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition">
+          </div>
+
+          <!-- Event Type (ประเภทการประชุม) -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">
+              หมวดหมู่งาน Event <span class="text-rose-500">*</span>
+            </label>
+            <select id="bookingEventType" class="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden bg-white transition">
+              <option value="1-on-1 ปรึกษางาน">1-on-1 ปรึกษางาน</option>
+              <option value="ประชุมติดตามงานโครงการ (Project Sync)">ประชุมติดตามงานโครงการ (Project Sync)</option>
+              <option value="ตรวจแบบและขออนุมัติงาน">ตรวจแบบและขออนุมัติงาน</option>
+              <option value="สัมภาษณ์ / ประเมินผลงาน">สัมภาษณ์ / ประเมินผลงาน</option>
+              <option value="นัดคุยงานด่วน">นัดคุยงานด่วน</option>
+              <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+          </div>
+
+          <!-- Meeting Format (รูปแบบการเข้าพบ) -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">รูปแบบการเข้าพบ</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center space-x-2 p-2.5 border border-slate-200 rounded-xl text-xs cursor-pointer hover:bg-slate-50 transition has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/50">
+                <input type="radio" name="meetingFormat" value="onsite" checked class="text-emerald-600 focus:ring-emerald-500">
+                <span class="font-medium text-slate-700">🏢 เข้าพบ ณ สาขา</span>
+              </label>
+              <label class="flex items-center space-x-2 p-2.5 border border-slate-200 rounded-xl text-xs cursor-pointer hover:bg-slate-50 transition has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50/50">
+                <input type="radio" name="meetingFormat" value="online" class="text-emerald-600 focus:ring-emerald-500">
+                <span class="font-medium text-slate-700">💻 คุยออนไลน์</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Meeting Notes / Agenda -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">รายละเอียดเพิ่มเติม / วาระที่ต้องการคุย</label>
+            <textarea id="bookingNotes" rows="2" placeholder="เช่น เอกสารที่เตรียมมา, ประเด็นที่ต้องการให้ช่วยตัดสินใจ" 
+              class="w-full px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden transition"></textarea>
+          </div>
+
+          <div class="pt-2">
+            <button onclick="app.submitBooking()" id="submitBookingBtn" class="w-full py-3 btn-line font-bold rounded-xl text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2">
+              <i data-lucide="check" class="w-4 h-4"></i>
+              <span>ยืนยันการลงคิว Meeting</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 2: Host Daily Location & Leave Setting                  -->
+  <!-- ============================================================= -->
+  <div id="dutyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2">
+          <i data-lucide="map-pin" class="w-4 h-4 text-amber-500"></i>
+          <span>กำหนดสาขาประจำวัน / แจ้งวันลา</span>
+        </h3>
+        <button onclick="app.closeDutyModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">เลือกวันที่</label>
+          <input type="date" id="dutyDateInput" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">ประเภทสถานะ</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="dutyTypeWorkBtn" onclick="app.setDutyMode('work')" class="py-2 px-3 border border-amber-500 bg-amber-50 text-amber-900 rounded-xl font-semibold text-center transition">
+              🏢 ปฏิบัติงานที่สาขา / WFH
+            </button>
+            <button type="button" id="dutyTypeLeaveBtn" onclick="app.setDutyMode('leave')" class="py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition">
+              🏖️ ลาพักร้อน / On Sales
+            </button>
+          </div>
+        </div>
+
+        <div id="dutyBranchSection">
+          <label class="block font-bold text-slate-700 mb-1">เลือกสาขาที่เข้างาน</label>
+          <select id="dutyBranchSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500">
+            <!-- Branches populated by JS -->
+          </select>
+        </div>
+
+        <div id="dutyLeaveSection" class="hidden">
+          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
+          <select id="dutyLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500">
+            <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
+            <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
+            <option value="ลากิจ">📝 ลากิจ</option>
+            <option value="ลาป่วย">🏥 ลาป่วย</option>
+            <option value="อบรมภายนอก">📚 อบรมภายนอก</option>
+          </select>
+          <p class="text-[11px] text-amber-600 mt-1">* วันนี้จะเปลี่ยนสถานะเป็นสีเทา (ปิดรับคิว) ให้อัตโนมัติ</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">หมายเหตุ / รายละเอียดสถานที่</label>
+          <input type="text" id="dutyNoteInput" placeholder="เช่น เข้าตรวจหน้างานบ่าย, ติดต่อเบอร์มือถือ" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+        </div>
+
+        <button onclick="app.saveDuty()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-sm transition">
+          บันทึกสถานะประจำวัน
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 3: Host Block Time Slot Modal                           -->
+  <!-- ============================================================= -->
+  <div id="blockModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2">
+          <i data-lucide="clock" class="w-4 h-4 text-rose-500"></i>
+          <span>บล็อกช่วงเวลาที่ไม่ว่าง (Host Blockout)</span>
+        </h3>
+        <button onclick="app.closeBlockModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">เลือกวันที่</label>
+          <input type="date" id="blockDateInput" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+        </div>
+
+        <div class="flex items-center space-x-2 py-1">
+          <input type="checkbox" id="blockFullDayCheckbox" onchange="app.toggleBlockFullDay()" class="rounded-sm text-rose-600 focus:ring-rose-500">
+          <label for="blockFullDayCheckbox" class="font-bold text-slate-700 cursor-pointer">ปิดรับคิวตลอดทั้งวัน (Full Day Block)</label>
+        </div>
+
+        <div id="blockTimeInputs" class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาเริ่ม</label>
+            <input type="time" id="blockStartTimeInput" value="10:00" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาสิ้นสุด</label>
+            <input type="time" id="blockEndTimeInput" value="12:00" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">เหตุผลที่ไม่ว่าง / ภารกิจ</label>
+          <input type="text" id="blockReasonInput" placeholder="เช่น ติดประชุมผู้บริหาร, ตรวจงานนอกสถานที่" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+        </div>
+
+        <button onclick="app.saveBlockSlot()" class="w-full py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl shadow-sm transition">
+          บันทึกการบล็อกเวลา
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 4: LINE LIFF ID Config Modal                            -->
+  <!-- ============================================================= -->
+  <div id="liffConfigModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-emerald-700">
+          <i data-lucide="smartphone" class="w-4 h-4"></i>
+          <span>ตั้งค่า LINE LIFF ID (Live Mode)</span>
+        </h3>
+        <button onclick="app.closeLiffConfigModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <p class="text-slate-600 leading-relaxed">
+          นำ <strong>LIFF ID</strong> จาก LINE Developers Console (รูปแบบ <code class="bg-slate-100 px-1 py-0.5 rounded-sm">1234567890-abcdefgh</code>) มาใส่ที่นี่ เพื่อเปิดใช้งานระบบ LINE Login อัตโนมัติเมื่อเปิดผ่านแอป LINE
+        </p>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">LINE LIFF ID</label>
+          <input type="text" id="liffIdInput" placeholder="เช่น 2006789012-ABCDefgh" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500">
+        </div>
+
+        <button onclick="app.saveLiffId()" class="w-full py-2.5 btn-line font-bold rounded-xl shadow-sm transition">
+          บันทึกและเชื่อมต่อ LIFF
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 5: Branch Management Modal (แก้ไข/เพิ่ม/ลบ สาขา)           -->
+  <!-- ============================================================= -->
+  <div id="branchModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4 max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-teal-700">
+          <i data-lucide="building-2" class="w-5 h-5"></i>
+          <span>จัดการรายชื่อสาขาและสถานที่ปฏิบัติงาน</span>
+        </h3>
+        <button onclick="app.closeBranchModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Scrollable branch list -->
+      <div class="overflow-y-auto space-y-3 flex-1 pr-1">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-700 uppercase tracking-wide">รายชื่อสาขาทั้งหมด</span>
+          <span class="text-[11px] text-slate-400">แก้ไขหรือลบได้ทันที</span>
+        </div>
+
+        <div id="branchListContainer" class="space-y-2">
+          <!-- Branches rendered by JS -->
+        </div>
+
+        <!-- Add New Branch Form -->
+        <div class="pt-3 border-t border-slate-200 space-y-2.5 bg-slate-50 p-3.5 rounded-2xl">
+          <h4 class="font-bold text-xs text-slate-700 flex items-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-teal-600"></i>
+            <span>เพิ่มสาขา / สถานที่ทำงานใหม่</span>
+          </h4>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">ชื่อสาขา <span class="text-rose-500">*</span></label>
+            <input type="text" id="newBranchName" placeholder="เช่น สาขาระยอง, ออฟฟิศสาทร" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">ที่อยู่ / ห้องประชุม / หมายเหตุ</label>
+            <input type="text" id="newBranchAddress" placeholder="เช่น อาคาร C ชั้น 3 หรือ ลิงก์ห้องออนไลน์" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 bg-white">
+          </div>
+          <button onclick="app.addBranch()" class="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>เพิ่มสาขานี้</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 6: Team Leader Duty Modal (หัวหน้าทีมแจ้งสาขา/วันลา)     -->
+  <!-- ============================================================= -->
+  <div id="teamDutyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-teal-700">
+          <i data-lucide="map-pin" class="w-4 h-4"></i>
+          <span>แจ้งสาขาที่ปฏิบัติงาน / วันลา (หัวหน้าทีม)</span>
+        </h3>
+        <button onclick="app.closeTeamDutyModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">หัวหน้าทีม</label>
+          <select id="teamDutyLeaderSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-semibold text-slate-700">
+            <!-- Populated by JS -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">วันที่</label>
+          <input type="date" id="teamDutyDateInput" class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">ประเภทสถานะ</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="teamDutyTypeWorkBtn" onclick="app.setTeamDutyMode('work')" class="py-2 px-3 border border-teal-500 bg-teal-50 text-teal-900 rounded-xl font-semibold text-center transition">
+              🏢 ไปสาขา / WFH
+            </button>
+            <button type="button" id="teamDutyTypeLeaveBtn" onclick="app.setTeamDutyMode('leave')" class="py-2 px-3 border border-slate-200 bg-slate-50 text-slate-600 rounded-xl font-semibold text-center transition">
+              🏖️ ลาพักร้อน / On Sales
+            </button>
+          </div>
+        </div>
+
+        <div id="teamDutyBranchSection">
+          <label class="block font-bold text-slate-700 mb-1">เลือกสาขาที่ไปปฏิบัติงาน</label>
+          <select id="teamDutyBranchSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-teal-500">
+            <!-- Populated by JS -->
+          </select>
+        </div>
+
+        <div id="teamDutyLeaveSection" class="hidden">
+          <label class="block font-bold text-slate-700 mb-1">ประเภทการลา / สถานะภายนอก</label>
+          <select id="teamDutyLeaveTypeSelect" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-teal-500">
+            <option value="On Sales">💼 On Sales (ออกพบลูกค้า / ขายงาน)</option>
+            <option value="ลาพักร้อน">🏖️ ลาพักร้อน</option>
+            <option value="ลากิจ">📝 ลากิจ</option>
+            <option value="ลาป่วย">🏥 ลาป่วย</option>
+            <option value="อบรมภายนอก">📚 อบรมภายนอก</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">หมายเหตุ / ช่องทางติดต่อด่วน</label>
+          <input type="text" id="teamDutyNoteInput" placeholder="เช่น ประชุมหน้างานตลอดเช้า, โทรเบอร์มือถือ" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
+        </div>
+
+        <button onclick="app.saveTeamDuty()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-sm transition">
+          บันทึกสถานะของฉัน
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 7: Team Leaders Management Modal (Host จัดการรายชื่อลีดเดอร์) -->
+  <!-- ============================================================= -->
+  <div id="teamLeaderManageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4 max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-indigo-700">
+          <i data-lucide="users" class="w-5 h-5"></i>
+          <span>จัดการรายชื่อหัวหน้าทีม (Team Leaders)</span>
+        </h3>
+        <button onclick="app.closeTeamLeaderManageModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="overflow-y-auto space-y-3 flex-1 pr-1">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-700 uppercase tracking-wide">รายชื่อหัวหน้าทีมในระบบ</span>
+          <span class="text-[11px] text-slate-400">หัวหน้าทีมสามารถแจ้งสาขาและวันลาได้</span>
+        </div>
+
+        <div id="teamLeaderListContainer" class="space-y-2">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Add Leader Form -->
+        <div class="pt-3 border-t border-slate-200 space-y-2.5 bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-xs text-indigo-900 flex items-center space-x-1.5">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>เพิ่ม / แต่งตั้งหัวหน้าทีม</span>
+            </h4>
+            <span class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">✨ เลือกสมาชิกได้เลย</span>
+          </div>
+
+          <!-- Direct Member Selector Dropdown -->
+          <div class="bg-white p-2.5 rounded-xl border border-indigo-200">
+            <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center space-x-1">
+              <span>👤 เลือกจากสมาชิก LINE ที่เคยเข้าใช้งาน:</span>
+            </label>
+            <select id="selectRegisteredUser" onchange="app.onSelectRegisteredUser(this.value)" class="w-full px-3 py-1.5 text-xs border border-indigo-300 rounded-lg bg-indigo-50/30 font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500">
+              <option value="">-- แตะเพื่อเลือกสมาชิก LINE ที่เคยเข้าใช้ระบบ --</option>
+            </select>
+            <p class="text-[10px] text-slate-400 mt-1">💡 สมาชิกที่เคยแตะเปิดลิงก์ใน LINE จะมีชื่อขึ้นที่นี่อัตโนมัติ ไม่ต้องคัดลอก LINE ID</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">ชื่อ-นามสกุล <span class="text-rose-500">*</span></label>
+              <input type="text" id="newLeaderName" placeholder="เช่น สมศักดิ์ นำทีม" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">แผนก / ตำแหน่ง</label>
+              <input type="text" id="newLeaderDept" placeholder="เช่น ฝ่าย IT, ฝ่ายการตลาด" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">สาขาประจำ / ที่อยู่ปกติ <span class="text-rose-500">*</span></label>
+            <select id="newLeaderDefaultBranch" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-medium">
+              <!-- Populated by JS -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">LINE User ID (ระบบดึงให้อัตโนมัติเมื่อเลือกสมาชิก)</label>
+            <input type="text" id="newLeaderLineId" placeholder="จะแสดงอัตโนมัติเมื่อเลือกสมาชิกด้านบน" class="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-slate-50 text-slate-500 font-mono text-[11px]">
+          </div>
+          <button onclick="app.addTeamLeader()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>บันทึกตั้งเป็นหัวหน้าทีม</span>
+          </button>
+        </div>
+
+        <!-- Edit Leader Form Section (เมื่อกดปุ่มดินสอแก้ไข) -->
+        <div id="editLeaderFormSection" class="hidden pt-3 border-t border-indigo-200 space-y-2.5 bg-indigo-50/80 p-3.5 rounded-2xl border">
+          <div class="flex items-center justify-between">
+            <h4 class="font-bold text-xs text-indigo-900 flex items-center space-x-1.5">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>แก้ไขข้อมูลหัวหน้าทีม</span>
+            </h4>
+            <button onclick="app.cancelEditTeamLeader()" class="text-slate-400 hover:text-slate-600">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <input type="hidden" id="editLeaderId">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">ชื่อ-นามสกุล <span class="text-rose-500">*</span></label>
+              <input type="text" id="editLeaderName" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">แผนก / ตำแหน่ง</label>
+              <input type="text" id="editLeaderDept" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+            </div>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">สาขาประจำ / ที่อยู่ปกติ</label>
+            <select id="editLeaderDefaultBranch" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white font-medium">
+              <!-- Populated by JS -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-700 mb-0.5">LINE User ID</label>
+            <input type="text" id="editLeaderLineId" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-white">
+          </div>
+          <div class="flex items-center space-x-2 pt-1">
+            <button onclick="app.saveEditTeamLeader()" class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
+              <i data-lucide="check" class="w-4 h-4"></i>
+              <span>บันทึกการแก้ไข</span>
+            </button>
+            <button onclick="app.cancelEditTeamLeader()" class="py-2 px-3 bg-white border border-slate-200 text-slate-600 font-semibold rounded-xl text-xs hover:bg-slate-50 transition">
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 8: Settings Modal (ตั้งค่าระบบ & ข้อมูล Host)            -->
+  <!-- ============================================================= -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-amber-700">
+          <i data-lucide="sliders" class="w-4 h-4 text-amber-600"></i>
+          <span>ตั้งค่าระบบและข้อมูล Host</span>
+        </h3>
+        <button onclick="app.closeSettingsModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">ชื่อเจ้าของคิว (Host Name) <span class="text-rose-500">*</span></label>
+          <input type="text" id="settingHostName" placeholder="เช่น คุณมณเทียร (Manager)" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium text-slate-800 focus:ring-2 focus:ring-amber-500 bg-white">
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">สาขาประจำ / ที่อยู่ปกติของ Host</label>
+          <select id="settingHostDefaultBranch" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+            <!-- Populated by JS -->
+          </select>
+          <p class="text-[11px] text-slate-400 mt-1">* วันที่ไม่ได้แจ้งย้ายสาขาหรือแจ้งลา ระบบจะใช้สาขานี้เป็นค่าปกติ</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">ความยาวรอบเวลาการประชุม</label>
+          <select id="settingSlotDuration" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+            <option value="60">รอบละ 60 นาที (1 ชั่วโมง)</option>
+            <option value="30">รอบละ 30 นาที</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาเริ่มงาน (จ.-ศ.)</label>
+            <select id="settingWorkStartHour" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+              <option value="8">08:00 น.</option>
+              <option value="9">09:00 น.</option>
+              <option value="10">10:00 น.</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">เวลาเลิกงาน (จ.-ศ.)</label>
+            <select id="settingWorkEndHour" class="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white font-medium text-slate-800 focus:ring-2 focus:ring-amber-500">
+              <option value="16">16:00 น.</option>
+              <option value="17">17:00 น.</option>
+              <option value="18">18:00 น.</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 pt-1">
+          <input type="checkbox" id="settingWeekendOpen" class="rounded text-amber-600 focus:ring-amber-500">
+          <label for="settingWeekendOpen" class="font-bold text-slate-700 cursor-pointer">เปิดรับคิววันเสาร์ - อาทิตย์ (ทั้งวัน)</label>
+        </div>
+
+        <div class="pt-2">
+          <button onclick="app.saveSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>บันทึกการตั้งค่า</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- MODAL 9: Event Types Management (จัดการหมวดหมู่ Event)         -->
+  <!-- ============================================================= -->
+  <div id="eventTypeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4 max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2 text-purple-700">
+          <i data-lucide="tag" class="w-5 h-5"></i>
+          <span>จัดการหมวดหมู่งาน Event / การประชุม</span>
+        </h3>
+        <button onclick="app.closeEventTypeModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="overflow-y-auto space-y-3 flex-1 pr-1">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-700 uppercase tracking-wide">หมวดหมู่ทั้งหมดในระบบ</span>
+          <span class="text-[11px] text-slate-400">แก้ไขหรือลบได้ทันที</span>
+        </div>
+
+        <div id="eventTypeListContainer" class="space-y-2">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Add Event Type Form -->
+        <div class="pt-3 border-t border-slate-200 space-y-2.5 bg-slate-50 p-3.5 rounded-2xl">
+          <h4 class="font-bold text-xs text-slate-700 flex items-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-purple-600"></i>
+            <span>เพิ่มหมวดหมู่ Event ใหม่</span>
+          </h4>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">ชื่อหมวดหมู่งาน Event <span class="text-rose-500">*</span></label>
+            <input type="text" id="newEventTypeName" placeholder="เช่น ประชุมวางแผนไตรมาส, ตรวจรับงานงวด" class="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 bg-white">
+          </div>
+          <button onclick="app.addEventType()" class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>เพิ่มหมวดหมู่นี้</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 pointer-events-none space-y-2"></div>
+
+  <!-- App Script -->
+  <script src="js/app.js"></script>
+  <script>
+    // Initialize icons
+    lucide.createIcons();
+  </script>
+</body>
+</html>
