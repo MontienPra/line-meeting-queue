@@ -60,6 +60,18 @@ class MeetingQueueApp {
     this.init();
   }
 
+  timeToMinutes(t) {
+    if (!t || typeof t !== 'string' || !t.includes(':')) return 0;
+    const parts = t.split(':');
+    return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+  }
+
+  minutesToTime(m) {
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    return `${h < 10 ? '0' + h : h}:${min < 10 ? '0' + min : min}`;
+  }
+
   async init() {
     try {
       this.setupDropdown();
@@ -809,7 +821,7 @@ class MeetingQueueApp {
             }
           }
           if (halfDayCheckbox) halfDayCheckbox.checked = !!data.duty.isHalfDay;
-          document.getElementById('inlineHostNoteInput').value = data.duty.note || '';
+          document.getElementById('inlineHostNoteInput').value = (data.duty.note && data.duty.note !== 'สาขาประจำปกติ') ? data.duty.note : '';
         } else {
           this.setInlineHostDutyMode('work');
           hostBranchSelect.value = 'none';
@@ -1245,7 +1257,7 @@ class MeetingQueueApp {
           document.getElementById('inlineLeaderBranchSelect').value = 'none';
         }
       }
-      document.getElementById('inlineLeaderNoteInput').value = tl.duty.note || '';
+      document.getElementById('inlineLeaderNoteInput').value = (tl.duty.note && tl.duty.note !== 'สาขาประจำปกติ') ? tl.duty.note : '';
     } else {
       this.setInlineLeaderDutyMode('work');
       document.getElementById('inlineLeaderBranchSelect').value = 'none';
@@ -1514,7 +1526,43 @@ class MeetingQueueApp {
     const effectiveIsHost = !!(isHost || (this.currentUser && this.currentUser.role === 'host'));
     const isLeader = !!(this.currentUser && this.currentUser.role === 'team_leader');
 
-    slots.forEach(slot => {
+    // 1. Group contiguous slots belonging to the same booking or the same host block
+    const displaySlots = [];
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      if (slot.state === 'booked' && slot.booking && slot.booking.id) {
+        const lastGroup = displaySlots[displaySlots.length - 1];
+        if (lastGroup && lastGroup.state === 'booked' && lastGroup.booking && lastGroup.booking.id === slot.booking.id) {
+          lastGroup.endTime = slot.endTime;
+          lastGroup.label = `${lastGroup.startTime} - ${slot.endTime}`;
+          lastGroup.coveredSlots = (lastGroup.coveredSlots || 1) + 1;
+          continue;
+        }
+        displaySlots.push({
+          ...slot,
+          coveredSlots: 1
+        });
+      } else if (slot.state === 'blocked' && slot.blockId) {
+        const lastGroup = displaySlots[displaySlots.length - 1];
+        if (lastGroup && lastGroup.state === 'blocked' && lastGroup.blockId === slot.blockId) {
+          lastGroup.endTime = slot.endTime;
+          lastGroup.label = `${lastGroup.startTime} - ${slot.endTime}`;
+          lastGroup.coveredSlots = (lastGroup.coveredSlots || 1) + 1;
+          continue;
+        }
+        displaySlots.push({
+          ...slot,
+          coveredSlots: 1
+        });
+      } else {
+        displaySlots.push({
+          ...slot,
+          coveredSlots: 1
+        });
+      }
+    }
+
+    displaySlots.forEach(slot => {
       const slotCard = document.createElement('div');
       slotCard.className = 'p-3 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-2';
 
@@ -1546,6 +1594,30 @@ class MeetingQueueApp {
         const isInterview = !!(b.isInterview || (b.eventType && b.eventType.includes('สัมภาษณ์')));
         const isCompanyMeeting = !!(b.isCompanyMeeting || (b.eventType && b.eventType.includes('ประชุมบริษัท')));
         const canViewDetails = isMine || effectiveIsHost || isLeader;
+        const coveredBadgeHtml = (slot.coveredSlots > 1) ? `<span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded-md">${slot.coveredSlots} ช่วงเวลาต่อเนื่อง (${slot.startTime} - ${slot.endTime} น.)</span>` : '';
+        const branchDisplay = b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา') + (b.branchAddress ? ` (${b.branchAddress})` : '');
+
+        // Cancel / Trim Buttons HTML
+        const actionBtnHtml = (isMine || effectiveIsHost) ? (
+          (slot.coveredSlots > 1) ? `
+            <div class="flex items-center space-x-1.5 self-end sm:self-center shrink-0">
+              <button onclick="app.promptTrimBooking('${b.id}', '${slot.startTime}', '${slot.endTime}', ${slot.coveredSlots})" class="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[11px] font-bold rounded-lg transition" title="ปรับลดช่วงเวลาที่จองลง">
+                ✂️ ปรับลดเวลา
+              </button>
+              <button onclick="app.cancelBooking('${b.id}', '${slot.startTime}', '${slot.endTime}', ${slot.coveredSlots})" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold rounded-lg transition">
+                ${effectiveIsHost && !isMine ? 'ยกเลิกทั้งคิว (Host)' : 'ยกเลิกทั้งคิว'}
+              </button>
+            </div>
+          ` : `
+            <button onclick="app.cancelBooking('${b.id}', '${slot.startTime}', '${slot.endTime}', 1)" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center shrink-0">
+              ${effectiveIsHost && !isMine ? 'ยกเลิก (Host)' : 'ยกเลิกคิวนี้'}
+            </button>
+          `
+        ) : `
+          <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+            จองแล้ว
+          </span>
+        `;
 
         if (isMine) {
           slotCard.classList.add(isInterview ? 'bg-purple-50/90' : isCompanyMeeting ? 'bg-blue-50/90' : 'bg-amber-50/80', isInterview ? 'border-purple-300' : isCompanyMeeting ? 'border-blue-300' : 'border-amber-300');
@@ -1560,15 +1632,14 @@ class MeetingQueueApp {
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
                   <span class="text-[10px] font-bold ${myBadgeColor} px-1.5 py-0.2 rounded-md">${myBadgeText}</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-700 mt-0.5">📌 ${b.eventTitle || 'หัวข้อการประชุม'} <span class="font-normal text-slate-500">(${b.eventType || 'ทั่วไป'})</span></div>
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-500 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center shrink-0">
-              ยกเลิกคิวนี้
-            </button>
+            ${actionBtnHtml}
           `;
         } else if (isInterview && canViewDetails) {
           // Interview viewed by Host or Team Leader
@@ -1580,7 +1651,8 @@ class MeetingQueueApp {
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
                   <span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🎯 💼 สัมภาษณ์งาน (กรรมการ)</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-800 mt-0.5">
                   <span>${b.employeeName}</span>
@@ -1589,11 +1661,7 @@ class MeetingQueueApp {
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${effectiveIsHost ? `
-              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
-                ยกเลิก (Host)
-              </button>
-            ` : `
+            ${effectiveIsHost ? actionBtnHtml : `
               <span class="text-[11px] font-medium text-purple-700 bg-purple-100/80 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
                 👁️ กรรมการร่วม
               </span>
@@ -1601,7 +1669,6 @@ class MeetingQueueApp {
           `;
         } else if (isCompanyMeeting && canViewDetails) {
           // Company Meeting viewed by Host or Team Leader
-          const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
           slotCard.classList.add('bg-blue-50/80', 'border-blue-200');
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
@@ -1610,9 +1677,10 @@ class MeetingQueueApp {
               </div>
               <div>
                 <div class="flex items-center space-x-1.5 flex-wrap">
-                  <span class="font-bold text-xs sm:text-sm text-slate-800">${timeRangeDisplay}</span>
+                  <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
                   <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท (Host/หัวหน้าทีม)</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-800 mt-0.5">
                   <span class="text-blue-900">📌 ${b.eventTitle || 'การประชุมบริษัท'}</span>
@@ -1621,11 +1689,7 @@ class MeetingQueueApp {
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${effectiveIsHost ? `
-              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
-                ยกเลิก (Host)
-              </button>
-            ` : `
+            ${effectiveIsHost ? actionBtnHtml : `
               <span class="text-[11px] font-medium text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
                 👁️ เข้าร่วมประชุม
               </span>
@@ -1633,7 +1697,6 @@ class MeetingQueueApp {
           `;
         } else if (isCompanyMeeting && !canViewDetails) {
           // Company Meeting viewed by general user (MASKED)
-          const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
           slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
@@ -1642,9 +1705,10 @@ class MeetingQueueApp {
               </div>
               <div>
                 <div class="flex items-center space-x-1.5 flex-wrap">
-                  <span class="font-bold text-xs sm:text-sm text-slate-700">${timeRangeDisplay}</span>
+                  <span class="font-bold text-xs sm:text-sm text-slate-700">${slot.label}</span>
                   <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-700 mt-0.5">
                   <span>📌 การประชุมบริษัท</span>
@@ -1669,7 +1733,8 @@ class MeetingQueueApp {
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-700">${slot.label}</span>
                   <span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🔒 💼 สัมภาษณ์งาน</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-600 mt-0.5">
                   <span class="text-slate-400 font-normal">[สงวนสิทธิ์ข้อมูลผู้สมัครงาน]</span>
@@ -1692,7 +1757,8 @@ class MeetingQueueApp {
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-700">${slot.label}</span>
                   <span class="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded-md">👥 คิวเพื่อนร่วมงาน</span>
-                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                  ${coveredBadgeHtml}
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${branchDisplay}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-800 mt-0.5">
                   <span>${b.employeeName || 'เพื่อนร่วมงาน'}</span>
@@ -1701,15 +1767,7 @@ class MeetingQueueApp {
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-500 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${effectiveIsHost ? `
-              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
-                ยกเลิก (Host)
-              </button>
-            ` : `
-              <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
-                จองแล้ว
-              </span>
-            `}
+            ${actionBtnHtml}
           `;
         }
       } else if (slot.state === 'blocked') {
@@ -1780,26 +1838,70 @@ class MeetingQueueApp {
     badge.textContent = `${startTime} - ${endTime}`;
     formContainer.classList.remove('hidden');
 
-    const isHostOrLeader = (this.currentUser.role === 'host' || this.currentUser.role === 'team_leader');
     const multiSlotSection = document.getElementById('bookingMultiSlotSection');
     const startTimeDisplay = document.getElementById('bookingStartTimeDisplay');
     const endTimeSelect = document.getElementById('bookingEndTimeSelect');
 
-    if (isHostOrLeader && multiSlotSection && endTimeSelect) {
+    // Calculate slot interval in minutes (e.g. 30 or 60)
+    const startMin = this.timeToMinutes(startTime);
+    const endMin = this.timeToMinutes(endTime);
+    const stepMin = Math.max(15, endMin - startMin);
+    this.selectedSlotDurationMinutes = stepMin;
+
+    if (multiSlotSection && endTimeSelect) {
       multiSlotSection.classList.remove('hidden');
       if (startTimeDisplay) startTimeDisplay.value = startTime;
 
-      // Populate valid subsequent end times (1-hour steps up to 17:00)
+      // Populate valid subsequent end times using stepMin
       endTimeSelect.innerHTML = '';
-      const startHour = parseInt(startTime.split(':')[0]);
-      for (let h = startHour + 1; h <= 17; h++) {
-        const timeStr = `${h < 10 ? '0' + h : h}:00`;
+
+      // Determine max end time of day from currentDayData or fallback to 17:00
+      let maxEndMin = 17 * 60;
+      if (this.currentDayData && Array.isArray(this.currentDayData.slots) && this.currentDayData.slots.length > 0) {
+        const lastSlot = this.currentDayData.slots[this.currentDayData.slots.length - 1];
+        maxEndMin = this.timeToMinutes(lastSlot.endTime);
+      }
+
+      // Find if there is any booked or blocked slot starting after this slot to prevent overlapping
+      let limitEndMin = maxEndMin;
+      if (this.currentDayData && Array.isArray(this.currentDayData.slots)) {
+        for (const s of this.currentDayData.slots) {
+          const sStart = this.timeToMinutes(s.startTime);
+          if (sStart >= endMin && (s.state === 'booked' || s.state === 'blocked')) {
+            limitEndMin = sStart;
+            break;
+          }
+        }
+      }
+
+      for (let curEnd = endMin; curEnd <= limitEndMin; curEnd += stepMin) {
+        const timeStr = this.minutesToTime(curEnd);
+        const durationMin = curEnd - startMin;
+        const numSlots = Math.round(durationMin / stepMin);
+
+        let durationLabel = '';
+        if (durationMin < 60) {
+          durationLabel = `${durationMin} นาที`;
+        } else if (durationMin % 60 === 0) {
+          durationLabel = `${durationMin / 60} ชั่วโมง`;
+        } else {
+          durationLabel = `${Math.floor(durationMin / 60)} ชม. ${durationMin % 60} นาที`;
+        }
+
         const opt = document.createElement('option');
         opt.value = timeStr;
-        const durationHours = h - startHour;
-        opt.textContent = `${timeStr} (${durationHours} ชั่วโมง)`;
+        opt.textContent = `${timeStr} (${durationLabel}${numSlots > 1 ? ` / ${numSlots} ช่วงเวลา` : ''})`;
         endTimeSelect.appendChild(opt);
       }
+
+      // If limit prevented any option, at least add current slot endTime
+      if (endTimeSelect.options.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = endTime;
+        opt.textContent = `${endTime} (${stepMin} นาที)`;
+        endTimeSelect.appendChild(opt);
+      }
+
       endTimeSelect.value = endTime;
       this.onBookingEndTimeChange();
     } else if (multiSlotSection) {
@@ -1818,14 +1920,28 @@ class MeetingQueueApp {
     const endTimeSelect = document.getElementById('bookingEndTimeSelect');
     const durationBadge = document.getElementById('bookingDurationBadge');
     const badge = document.getElementById('selectedSlotBadge');
-    if (!endTimeSelect) return;
+    if (!endTimeSelect || !endTimeSelect.value) return;
 
-    const startH = parseInt(this.selectedSlot.startTime.split(':')[0]);
-    const endH = parseInt(endTimeSelect.value.split(':')[0]);
-    const diff = Math.max(1, endH - startH);
+    const startMin = this.timeToMinutes(this.selectedSlot.startTime);
+    const endMin = this.timeToMinutes(endTimeSelect.value);
+    const diffMin = Math.max(15, endMin - startMin);
+
+    const stepMin = this.selectedSlotDurationMinutes || (endMin - startMin) || 30;
+    const numSlots = Math.max(1, Math.round(diffMin / stepMin));
+
+    let durationText = '';
+    if (diffMin < 60) {
+      durationText = `${diffMin} นาที (${numSlots} ช่วงเวลา)`;
+    } else if (diffMin % 60 === 0) {
+      durationText = `${diffMin / 60} ชั่วโมง (${numSlots} ช่วงเวลา)`;
+    } else {
+      const h = Math.floor(diffMin / 60);
+      const m = diffMin % 60;
+      durationText = `${h} ชม. ${m} นาที (${numSlots} ช่วงเวลา)`;
+    }
 
     if (durationBadge) {
-      durationBadge.textContent = `${diff} ชั่วโมง (${diff} ช่วงเวลา)`;
+      durationBadge.textContent = durationText;
     }
     if (badge) {
       badge.textContent = `${this.selectedSlot.startTime} - ${endTimeSelect.value}`;
@@ -1899,7 +2015,8 @@ class MeetingQueueApp {
       this.showToast('success', '🎉 ลงคิว Meeting สำเร็จเรียบร้อยแล้ว!');
 
       // Send LINE message via LIFF if inside LINE app
-      await this.sendLineNotification(`📅 ลงคิว Meeting สำเร็จ!\nหัวข้อ: ${eventTitle}\nวันที่: ${this.selectedDate}\nเวลา: ${this.selectedSlot.startTime} - ${this.selectedSlot.endTime} น.\nผู้ลงคิว: ${this.currentUser.name}`);
+      const locText = meetingFormat === 'online' ? '💻 คุยออนไลน์' : `🏢 ${(data.booking && data.booking.branchName) ? data.booking.branchName + (data.booking.branchAddress ? ' (' + data.booking.branchAddress + ')' : '') : 'ที่สาขา'}`;
+      await this.sendLineNotification(`📅 ลงคิว Meeting สำเร็จ!\nหัวข้อ: ${eventTitle}\nวันที่: ${this.selectedDate}\nเวลา: ${this.selectedSlot.startTime} - ${effectiveEndTime} น.\nสถานที่: ${locText}\nผู้ลงคิว: ${this.currentUser.name}`);
 
       // Reset form
       document.getElementById('bookingEventTitle').value = '';
@@ -1921,8 +2038,12 @@ class MeetingQueueApp {
   // -------------------------------------------------------------
   // Cancel Booking (Strict Permission Enforcement)
   // -------------------------------------------------------------
-  async cancelBooking(bookingId) {
-    if (!confirm('คุณต้องการยกเลิกคิวการประชุมนี้ใช่หรือไม่?')) {
+  async cancelBooking(bookingId, startTime = null, endTime = null, coveredSlots = 1) {
+    let confirmMsg = 'คุณต้องการยกเลิกคิวการประชุมนี้ใช่หรือไม่?';
+    if (startTime && endTime && coveredSlots > 1) {
+      confirmMsg = `คิวนี้เป็นการจองครอบคลุม ${startTime} - ${endTime} น. (${coveredSlots} ช่วงเวลา)\n\nคุณต้องการยกเลิกคิวการประชุมนี้ทั้งหมดใช่หรือไม่?`;
+    }
+    if (!confirm(confirmMsg)) {
       return;
     }
 
@@ -1941,6 +2062,65 @@ class MeetingQueueApp {
       }
 
       this.showToast('info', 'ยกเลิกคิวเรียบร้อยแล้ว');
+      if (this.selectedDate) {
+        await this.openDayModal(this.selectedDate);
+      }
+      await this.loadMonthCalendar();
+      this.loadMyBookings();
+      this.loadHostBookings();
+    } catch (err) {
+      this.showToast('error', err.message);
+    }
+  }
+
+  async promptTrimBooking(bookingId, startTime, endTime, coveredSlots) {
+    if (!bookingId) return;
+    const startMin = this.timeToMinutes(startTime);
+    const endMin = this.timeToMinutes(endTime);
+    const stepMin = this.selectedSlotDurationMinutes || Math.round((endMin - startMin) / (coveredSlots || 2)) || 30;
+
+    if (endMin - startMin <= stepMin) {
+      this.showToast('info', 'คิวนี้มีความยาวเพียง 1 ช่วงเวลาแล้ว หากต้องการยกเลิกให้กดปุ่มยกเลิกทั้งคิว');
+      return;
+    }
+
+    const optStart = this.minutesToTime(startMin + stepMin);
+    const optEnd = this.minutesToTime(endMin - stepMin);
+
+    const promptText = 
+      `✂️ ปรับลดช่วงเวลาสำหรับคิวปัจจุบัน (${startTime} - ${endTime} น.):\n\n` +
+      `พิมพ์ 1: ยกเลิกช่วงแรกออก (เวลาใหม่จะเป็น ${optStart} - ${endTime} น.)\n` +
+      `พิมพ์ 2: ยกเลิกช่วงท้ายออก (เวลาใหม่จะเป็น ${startTime} - ${optEnd} น.)\n\n` +
+      `ระบุตัวเลข (1 หรือ 2):`;
+
+    const choice = prompt(promptText, '1');
+    if (!choice) return; // User cancelled
+
+    if (choice.trim() === '1') {
+      await this.trimBooking(bookingId, optStart, endTime);
+    } else if (choice.trim() === '2') {
+      await this.trimBooking(bookingId, startTime, optEnd);
+    } else {
+      this.showToast('error', 'กรุณาระบุหมายเลข 1 หรือ 2 เท่านั้น');
+    }
+  }
+
+  async trimBooking(bookingId, newStartTime, newEndTime) {
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ startTime: newStartTime, endTime: newEndTime })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถปรับลดเวลาได้');
+
+      this.showToast('success', `ปรับลดเวลาคิวเป็น ${newStartTime} - ${newEndTime} น. เรียบร้อยแล้ว`);
       if (this.selectedDate) {
         await this.openDayModal(this.selectedDate);
       }
@@ -2022,8 +2202,8 @@ class MeetingQueueApp {
             <h4 class="font-bold text-slate-800 text-sm mt-1.5">📌 ${b.eventTitle}</h4>
             <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
               <span class="bg-slate-100 px-2 py-0.5 rounded-md font-medium">${b.eventType}</span>
-              ${b.employeeName && isInterviewDuty ? `<span class="text-purple-700 font-semibold">👤 ผู้สมัคร/ผู้จอง: ${b.employeeName}</span>` : ''}
-              <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName || 'สำนักงานใหญ่'}`}</span>
+              ${b.employeeName && isInterviewDuty ? `<span class="text-purple-700 font-semibold">👤 ผู้จอง: ${b.employeeName}</span>` : ''}
+              <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName || 'ที่สาขา'}${b.branchAddress ? ` (${b.branchAddress})` : ''}`}</span>
             </div>
             ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
           </div>

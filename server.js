@@ -656,14 +656,14 @@ app.get('/api/calendar/day', (req, res) => {
     branchName: duty.branchName,
     isLeave: duty.isLeave,
     leaveType: duty.leaveType,
-    note: duty.note,
+    note: duty.note || '',
     isDefault: false
   } : {
     branchId: hostDefaultBranch ? hostDefaultBranch.id : null,
     branchName: hostDefaultBranch ? hostDefaultBranch.name : 'สำนักงานใหญ่',
     isLeave: false,
     leaveType: null,
-    note: 'สาขาประจำปกติ',
+    note: '',
     isDefault: true
   };
 
@@ -686,14 +686,14 @@ app.get('/api/calendar/day', (req, res) => {
         branchName: lDuty.branchName,
         isLeave: lDuty.isLeave,
         leaveType: lDuty.leaveType,
-        note: lDuty.note,
+        note: lDuty.note || '',
         isDefault: false
       } : {
         branchId: defBranch ? defBranch.id : null,
         branchName: defBranch ? defBranch.name : 'สำนักงานใหญ่',
         isLeave: false,
         leaveType: null,
-        note: 'สาขาประจำปกติ',
+        note: '',
         isDefault: true
       }
     };
@@ -765,9 +765,21 @@ app.post('/api/bookings', (req, res) => {
     return res.status(409).json({ error: 'ขออภัย มีบางช่วงเวลาที่มีผู้ลงคิวไว้เรียบร้อยแล้ว' });
   }
 
-  // Resolve branch info from daily duty
+  // Resolve branch & address info from Host duty or Host default branch
   const duty = db.daily_duties[date] || null;
-  const branchName = duty ? duty.branchName : 'สำนักงานใหญ่';
+  const hostDefaultBranch = (db.branches || []).find(b => b.id === (db.settings && db.settings.defaultBranchId)) || (db.branches && db.branches[0]);
+  
+  let branchName = 'สำนักงานใหญ่';
+  let branchAddress = '';
+
+  if (duty && (duty.branchName || duty.branchId)) {
+    const bObj = (db.branches || []).find(b => b.id === duty.branchId || b.name === duty.branchName);
+    branchName = bObj ? bObj.name : duty.branchName;
+    branchAddress = bObj ? (bObj.address || '') : '';
+  } else if (hostDefaultBranch) {
+    branchName = hostDefaultBranch.name;
+    branchAddress = hostDefaultBranch.address || '';
+  }
 
   const newBooking = {
     id: 'bk-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -781,6 +793,7 @@ app.post('/api/bookings', (req, res) => {
     employeePicture: employeePicture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(employeeName)}`,
     meetingType: meetingType || 'onsite',
     branchName,
+    branchAddress,
     notes: notes ? notes.trim() : '',
     createdAt: new Date().toISOString(),
     status: 'confirmed'
@@ -833,6 +846,58 @@ app.delete('/api/bookings/:id', (req, res) => {
   res.json({
     message: 'ยกเลิกคิวการนัดหมายเรียบร้อยแล้ว',
     cancelledBookingId: bookingId
+  });
+});
+
+// 4.1 Update / Trim Booking Time Range (Owner or Host Only)
+app.patch('/api/bookings/:id', (req, res) => {
+  const db = readDB();
+  const bookingId = req.params.id;
+  const { startTime, endTime } = req.body;
+  const requestingUserId = req.headers['x-user-id'] || req.body.userId || req.query.userId;
+  const isHost = isHostUser(req, db.settings);
+
+  if (!bookingId) {
+    return res.status(400).json({ error: 'Missing booking ID' });
+  }
+
+  const booking = (db.bookings || []).find(b => b.id === bookingId && b.status !== 'cancelled');
+  if (!booking) {
+    return res.status(404).json({ error: 'ไม่พบคิวการนัดหมายนี้ หรือคิวถูกยกเลิกไปแล้ว' });
+  }
+
+  const isOwner = (requestingUserId && requestingUserId === booking.employeeUserId);
+  if (!isOwner && !isHost) {
+    return res.status(403).json({
+      error: 'ความปลอดภัย: คุณไม่มีสิทธิ์แก้ไขคิวของพนักงานคนอื่น!',
+      code: 'PERMISSION_DENIED'
+    });
+  }
+
+  const newStart = startTime || booking.startTime;
+  const newEnd = endTime || booking.endTime;
+
+  if (startTime && !/^\d{2}:\d{2}$/.test(startTime)) {
+    return res.status(400).json({ error: 'รูปแบบเวลาเริ่มต้นไม่ถูกต้อง' });
+  }
+  if (endTime && !/^\d{2}:\d{2}$/.test(endTime)) {
+    return res.status(400).json({ error: 'รูปแบบเวลาสิ้นสุดไม่ถูกต้อง' });
+  }
+  if (newStart >= newEnd) {
+    return res.status(400).json({ error: 'เวลาเริ่มต้นต้องน้อยกว่าเวลาสิ้นสุด' });
+  }
+
+  booking.startTime = newStart;
+  booking.endTime = newEnd;
+  booking.updatedAt = new Date().toISOString();
+  booking.updatedBy = isHost ? 'host' : requestingUserId;
+
+  writeDB(db);
+
+  res.json({
+    success: true,
+    message: 'ปรับช่วงเวลาการนัดหมายเรียบร้อยแล้ว',
+    booking
   });
 });
 
