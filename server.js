@@ -322,9 +322,10 @@ function calculateDayStatus(dateStr, db, currentUserId) {
   const isSpecialWorkingWeekend = isWeekend && duty && !duty.isLeave && (duty.isWorkingDay || duty.isHalfDay || duty.branchId);
 
   if (isWeekend && !settings.weekendOpen && !isSpecialWorkingWeekend) {
+    const dayName = (dayOfWeek === 6 ? 'เสาร์' : 'อาทิตย์');
     return {
       status: 'grey',
-      statusText: 'วันหยุดสุดสัปดาห์ (ปิดรับคิว)',
+      statusText: `วัน${dayName} (ปิดรับคิว)`,
       canBook: false,
       reason: 'weekend',
       totalSlots: 0,
@@ -1095,11 +1096,17 @@ app.post('/api/host/duty', (req, res) => {
   db.daily_duties = db.daily_duties || {};
 
   // If user requests to clear / reset duty (กลับเป็นวันว่างปกติ ไม่ระบุสถานที่)
-  if (!isHalfDay && (isClear || branchId === 'none' || branchId === 'clear')) {
+  // หรือถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดรับคิวทำงานครึ่งวัน (isHalfDay: false) โดยไม่เลือกสาขาอื่น ให้กลับเป็นวันหยุดเสาร์/อาทิตย์ตามเดิมอัตโนมัติ
+  const dateObj = new Date(date + 'T00:00:00');
+  const isDateWeekend = (dateObj.getDay() === 0 || dateObj.getDay() === 6);
+  const isWeekendHalfDayClosed = (isDateWeekend && !isHalfDay && !isLeave && (!branchId || branchId === 'none' || branchId === 'clear'));
+
+  if (!isHalfDay && (isClear || branchId === 'none' || branchId === 'clear' || isWeekendHalfDayClosed)) {
     delete db.daily_duties[date];
     writeDB(db);
+    const dayName = (dateObj.getDay() === 6 ? 'เสาร์' : 'อาทิตย์');
     return res.json({
-      message: 'ล้างสถานะเรียบร้อยแล้ว (กลับเป็นสถานะว่างปกติ ไม่ระบุสถานที่)',
+      message: isDateWeekend ? `ปิดรับคิววัน${dayName} เรียบร้อยแล้ว (กลับเป็นวันหยุดตามปกติ)` : 'ล้างสถานะเรียบร้อยแล้ว (กลับเป็นสถานะว่างปกติ ไม่ระบุสถานที่)',
       duty: null
     });
   }

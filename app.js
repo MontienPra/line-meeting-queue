@@ -692,10 +692,15 @@ class MeetingQueueApp {
         myBookingHtml = `<span class="text-[9px] sm:text-xs font-bold text-amber-500 leading-none" title="คุณมีคิวจองในวันนี้">⭐</span>`;
       }
 
+      // Specific weekend day name (เสาร์ / อาทิตย์)
+      const isSaturday = dObj.getDay() === 6;
+      const isSunday = dObj.getDay() === 0;
+      const weekendDayName = isSaturday ? 'เสาร์' : (isSunday ? 'อาทิตย์' : '');
+
       // Lock Indicator (Subtle icon for blocked days or weekend)
       let lockIndicatorHtml = '';
       if (isWeekend && day.status === 'grey') {
-        lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-rose-400 font-bold leading-none" title="วันหยุดเสาร์-อาทิตย์ (ไม่ได้เปิดรับคิว)">⛱️</span>`;
+        lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-rose-400 font-bold leading-none" title="วัน${weekendDayName} (ไม่ได้เปิดรับคิว)">⛱️</span>`;
       } else if (day.status === 'grey' || day.isFullDayBlocked) {
         lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-slate-400 font-bold leading-none" title="ปิดรับคิว (กดเพื่อดูและปลดล็อกได้)">🔒</span>`;
       }
@@ -709,7 +714,7 @@ class MeetingQueueApp {
       } else if (day.status === 'red') {
         queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-bold text-rose-700 bg-rose-100 px-1 py-0.5 rounded leading-tight whitespace-nowrap">คิวเต็ม</span>`;
       } else if (isWeekend) {
-        queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-rose-700 bg-rose-100/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">เสาร์-อาทิตย์</span>`;
+        queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-rose-700 bg-rose-100/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">${weekendDayName}</span>`;
       } else {
         queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-slate-600 bg-slate-200/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">ปิดคิว</span>`;
       }
@@ -833,6 +838,9 @@ class MeetingQueueApp {
             if (halfDayCheckbox.checked) {
               this.setInlineHostDutyMode('work');
               // Automatically reset host branch to 'none' so host status is blank on calendar
+              hostBranchSelect.value = 'none';
+            } else {
+              // When unchecked on weekend, ensure branch is none so it cleanly reverts to closed weekend
               hostBranchSelect.value = 'none';
             }
           };
@@ -1304,6 +1312,9 @@ class MeetingQueueApp {
     const isHalfDay = document.getElementById('inlineHostHalfDay') ? document.getElementById('inlineHostHalfDay').checked : false;
     let payload = { date: this.selectedDate, note, isHalfDay };
 
+    const modalDObj = new Date(this.selectedDate + 'T00:00:00');
+    const isDateWeekend = (modalDObj.getDay() === 0 || modalDObj.getDay() === 6);
+
     if (isHalfDay) {
       // เมื่อเลือกทำงานครึ่งวัน ให้บังคับเปิดคิวทันที (ไม่เป็นสถานะลา)
       payload.isLeave = false;
@@ -1322,7 +1333,11 @@ class MeetingQueueApp {
       payload.leaveType = leaveType;
     } else {
       const branchId = document.getElementById('inlineHostBranchSelect').value;
-      if (branchId === 'none' || branchId === 'clear') {
+      // ถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดทำงานครึ่งวัน (และไม่ได้เลือกสาขาอื่น) ให้ล้างสถานะกลับเป็นวันเสาร์/อาทิตย์ตามเดิมอัตโนมัติ
+      if (isDateWeekend && (branchId === 'none' || branchId === 'clear' || !branchId)) {
+        payload.isClear = true;
+        payload.branchId = 'none';
+      } else if (branchId === 'none' || branchId === 'clear') {
         if (!isHalfDay && !note) {
           payload.isClear = true;
         } else {
@@ -1354,16 +1369,10 @@ class MeetingQueueApp {
 
       this.showToast('success', data.message);
 
-      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF
+      // แจ้งเตือนข้อความใน LINE ผ่าน LIFF (ไม่แจ้งเตือนเมื่อเปิด/ปิดทำงานครึ่งวัน ตามคำขอ)
       if (payload.isLeave) {
         const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
         let msg = `🏖️ แจ้งสถานะการลา / ภารกิจ\nหัวข้อ: ${payload.leaveType || 'ลาอื่นๆ'}\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${hostName}`;
-        if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
-        await this.sendLineNotification(msg);
-      } else if (payload.isHalfDay) {
-        const hostName = (this.settings && this.settings.hostName) || this.currentUser.name || 'Host';
-        let msg = `⏰ แจ้งเวลาปฏิบัติงาน (ทำงานครึ่งวัน 08:00 - 12:00 น.)\nวันที่: ${this.selectedDate}\nผู้แจ้ง: ${hostName}`;
-        if (payload.branchName) msg += `\nสถานที่: ${payload.branchName}`;
         if (payload.note) msg += `\nหมายเหตุ: ${payload.note}`;
         await this.sendLineNotification(msg);
       } else if (payload.branchName) {
