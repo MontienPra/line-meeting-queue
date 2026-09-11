@@ -783,12 +783,12 @@ app.post('/api/bookings', (req, res) => {
     return res.status(409).json({ error: 'ขออภัย ช่วงเวลานี้ Host ติดภารกิจหรือไม่เปิดรับคิว' });
   }
 
-  // Security Check: Only Host or Team Leader can book "ประชุมบริษัท"
-  if (isCompanyMeetingBooking(req.body)) {
+  // Security Check: Only Host or Team Leader can book "ประชุมบริษัท" or "สัมภาษณ์งาน"
+  if (isCompanyMeetingBooking(req.body) || isInterviewBooking(req.body)) {
     const isHost = isHostUser(req, db.settings);
     const isLeader = isLeaderUser(req, db);
     if (!isHost && !isLeader) {
-      return res.status(403).json({ error: 'เฉพาะ Host และหัวหน้าทีมเท่านั้นที่มีสิทธิ์ลงคิวประเภทประชุมบริษัท' });
+      return res.status(403).json({ error: 'เฉพาะ Host และหัวหน้าทีมเท่านั้นที่มีสิทธิ์ลงคิวประเภทประชุมบริษัท หรือสัมภาษณ์งาน' });
     }
   }
 

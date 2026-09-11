@@ -557,11 +557,19 @@ class MeetingQueueApp {
     const currentVal = select.value;
     select.innerHTML = '';
     
-    const isHostOrLeader = (this.currentUser.role === 'host' || this.currentUser.role === 'team_leader');
+    const isHostOrLeader = Boolean(this.currentUser && (this.currentUser.role === 'host' || this.currentUser.role === 'team_leader'));
+    const types = (this.eventTypes && this.eventTypes.length > 0) ? this.eventTypes : [
+      'ประชุมบริษัท', 'สัมภาษณ์งาน', '1-on-1 ปรึกษางาน', 'ประชุมติดตามงานโครงการ (Project Sync)', 'ตรวจแบบและขออนุมัติงาน', 'นัดคุยงานด่วน', 'อื่นๆ'
+    ];
 
-    (this.eventTypes || []).forEach(et => {
-      // General employees cannot select "ประชุมบริษัท"
-      if (!isHostOrLeader && et.includes('ประชุมบริษัท')) {
+    types.forEach(et => {
+      // General employees cannot see or select "ประชุมบริษัท" and "สัมภาษณ์งาน"
+      const lower = et.toLowerCase();
+      const isRestricted = lower.includes('ประชุมบริษัท') || 
+                           lower.includes('company meeting') || 
+                           lower.includes('สัมภาษณ์') || 
+                           lower.includes('interview');
+      if (!isHostOrLeader && isRestricted) {
         return;
       }
       const opt = document.createElement('option');
@@ -572,6 +580,8 @@ class MeetingQueueApp {
 
     if (currentVal && Array.from(select.options).some(o => o.value === currentVal)) {
       select.value = currentVal;
+    } else if (select.options.length > 0) {
+      select.selectedIndex = 0;
     }
   }
 
@@ -1907,6 +1917,8 @@ class MeetingQueueApp {
     const badge = document.getElementById('selectedSlotBadge');
     badge.textContent = `${startTime} - ${endTime}`;
     formContainer.classList.remove('hidden');
+
+    this.populateEventTypeDropdown();
 
     const multiSlotSection = document.getElementById('bookingMultiSlotSection');
     const startTimeDisplay = document.getElementById('bookingStartTimeDisplay');
