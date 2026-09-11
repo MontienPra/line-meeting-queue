@@ -137,10 +137,20 @@ async function initSupabaseSync() {
     memoryDB = cloudData;
     if (!memoryDB.registered_users) memoryDB.registered_users = [];
     if (!memoryDB.event_types) {
-      memoryDB.event_types = ['สัมภาษณ์งาน', '1-on-1 ปรึกษางาน', 'ประชุมติดตามงานโครงการ (Project Sync)', 'ตรวจแบบและขออนุมัติงาน', 'นัดคุยงานด่วน', 'อื่นๆ'];
-    } else if (!memoryDB.event_types.includes('สัมภาษณ์งาน')) {
-      memoryDB.event_types.unshift('สัมภาษณ์งาน');
-      saveToSupabase(memoryDB).catch(() => {});
+      memoryDB.event_types = ['ประชุมบริษัท', 'สัมภาษณ์งาน', '1-on-1 ปรึกษางาน', 'ประชุมติดตามงานโครงการ (Project Sync)', 'ตรวจแบบและขออนุมัติงาน', 'นัดคุยงานด่วน', 'อื่นๆ'];
+    } else {
+      let changed = false;
+      if (!memoryDB.event_types.includes('สัมภาษณ์งาน')) {
+        memoryDB.event_types.unshift('สัมภาษณ์งาน');
+        changed = true;
+      }
+      if (!memoryDB.event_types.includes('ประชุมบริษัท')) {
+        memoryDB.event_types.unshift('ประชุมบริษัท');
+        changed = true;
+      }
+      if (changed) {
+        saveToSupabase(memoryDB).catch(() => {});
+      }
     }
     const file = getDbFile();
     try {
@@ -168,13 +178,13 @@ function readLocalDB() {
       if (file !== defaultPath && fs.existsSync(defaultPath)) {
         const dir = path.dirname(file);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const defaultData = fs.readFileSync(defaultPath, 'utf8');
+        const defaultData = fs.readFileSync(defaultPath, 'utf8').replace(/^\uFEFF/, '');
         fs.writeFileSync(file, defaultData, 'utf8');
         return JSON.parse(defaultData);
       }
       return { settings: {}, branches: [], event_types: [], daily_duties: {}, blocked_slots: [], bookings: [], registered_users: [] };
     }
-    const data = fs.readFileSync(file, 'utf8');
+    const data = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
     const parsed = JSON.parse(data);
     if (!parsed.registered_users) parsed.registered_users = [];
     return parsed;
@@ -287,6 +297,13 @@ function isInterviewBooking(b) {
   return type.includes('สัมภาษณ์') || title.includes('สัมภาษณ์') || type.includes('interview') || title.includes('interview');
 }
 
+function isCompanyMeetingBooking(b) {
+  if (!b) return false;
+  const type = (b.eventType || '').toLowerCase();
+  const title = (b.eventTitle || '').toLowerCase();
+  return type.includes('ประชุมบริษัท') || title.includes('ประชุมบริษัท') || type.includes('company meeting') || title.includes('company meeting');
+}
+
 // -------------------------------------------------------------
 // Calendar Status Calculation Logic
 // 🟢 Green = ว่าง / ยังไม่ลงคิว
@@ -379,7 +396,7 @@ function calculateDayStatus(dateStr, db, currentUserId) {
 
     if (!isBlocked) {
       openSlotsCount++;
-      const isBooked = dayBookings.some(b => b.startTime === slot.startTime);
+      const isBooked = dayBookings.some(b => (slot.startTime < b.endTime && slot.endTime > b.startTime));
       if (isBooked) {
         bookedSlotsCount++;
       }
@@ -482,11 +499,15 @@ app.get('/api/calendar/month', (req, res) => {
       }
     });
 
-    // Check active interview bookings for this day
+    // Check active interview & company meeting bookings for this day
     const dayActiveBookings = (db.bookings || []).filter(b => b.date === dateStr && b.status !== 'cancelled');
     const interviewBookings = dayActiveBookings.filter(isInterviewBooking);
     const hasInterview = interviewBookings.length > 0;
     const interviewCount = interviewBookings.length;
+
+    const companyMeetingBookings = dayActiveBookings.filter(isCompanyMeetingBooking);
+    const hasCompanyMeeting = companyMeetingBookings.length > 0;
+    const companyMeetingCount = companyMeetingBookings.length;
 
     days.push({
       date: dateStr,
@@ -501,6 +522,8 @@ app.get('/api/calendar/month', (req, res) => {
       hasMyBooking: statusInfo.hasMyBooking,
       hasInterview,
       interviewCount,
+      hasCompanyMeeting,
+      companyMeetingCount,
       duty: duty ? {
         branchId: duty.branchId,
         branchName: duty.branchName,
@@ -572,11 +595,12 @@ app.get('/api/calendar/day', (req, res) => {
       };
     }
 
-    // Check if booked by employee
-    const bookingMatch = dayBookings.find(b => b.startTime === slot.startTime);
+    // Check if booked by employee / company meeting
+    const bookingMatch = dayBookings.find(b => (slot.startTime < b.endTime && slot.endTime > b.startTime));
     if (bookingMatch) {
       const isMine = (currentUserId && bookingMatch.employeeUserId === currentUserId);
       const isInterview = isInterviewBooking(bookingMatch);
+      const isCompanyMeeting = isCompanyMeetingBooking(bookingMatch);
       const canViewDetails = isMine || isHost || isLeader;
 
       let bookingData = {
@@ -590,6 +614,9 @@ app.get('/api/calendar/day', (req, res) => {
         notes: canViewDetails ? bookingMatch.notes : (bookingMatch.notes || 'นัดหมายการประชุม'),
         isMine,
         isInterview,
+        isCompanyMeeting,
+        bookingStartTime: bookingMatch.startTime,
+        bookingEndTime: bookingMatch.endTime,
         canCancel: (isMine || isHost) // STRICT PERMISSION: only owner or host
       };
 
@@ -598,6 +625,11 @@ app.get('/api/calendar/day', (req, res) => {
         bookingData.employeePicture = 'https://api.dicebear.com/7.x/bottts/svg?seed=interview-private';
         bookingData.notes = '🔒 สงวนสิทธิ์ข้อมูลเฉพาะกรรมการสัมภาษณ์ (Host & หัวหน้าทีม)';
         bookingData.eventTitle = 'สัมภาษณ์งาน (คิวส่วนบุคคล)';
+      } else if (isCompanyMeeting && !canViewDetails) {
+        bookingData.employeeName = 'ฝ่ายบริหาร / บริษัท';
+        bookingData.employeePicture = 'https://api.dicebear.com/7.x/bottts/svg?seed=company-meeting';
+        bookingData.notes = '📢 มีการประชุมบริษัทในช่วงเวลานี้ (ปิดรับคิว)';
+        bookingData.eventTitle = 'ประชุมบริษัท';
       }
 
       return {
@@ -716,12 +748,21 @@ app.post('/api/bookings', (req, res) => {
     return res.status(409).json({ error: 'ขออภัย ช่วงเวลานี้ Host ติดภารกิจหรือไม่เปิดรับคิว' });
   }
 
-  // Check if already booked
+  // Security Check: Only Host or Team Leader can book "ประชุมบริษัท"
+  if (isCompanyMeetingBooking(req.body)) {
+    const isHost = isHostUser(req, db.settings);
+    const isLeader = isLeaderUser(req, db);
+    if (!isHost && !isLeader) {
+      return res.status(403).json({ error: 'เฉพาะ Host และหัวหน้าทีมเท่านั้นที่มีสิทธิ์ลงคิวประเภทประชุมบริษัท' });
+    }
+  }
+
+  // Check if slot or range is already booked
   const isAlreadyBooked = (db.bookings || []).some(b => {
-    return b.date === date && b.startTime === startTime && b.status !== 'cancelled';
+    return b.date === date && b.status !== 'cancelled' && (startTime < b.endTime && endTime > b.startTime);
   });
   if (isAlreadyBooked) {
-    return res.status(409).json({ error: 'ขออภัย ช่วงเวลานี้มีผู้ลงคิวไว้เรียบร้อยแล้ว' });
+    return res.status(409).json({ error: 'ขออภัย มีบางช่วงเวลาที่มีผู้ลงคิวไว้เรียบร้อยแล้ว' });
   }
 
   // Resolve branch info from daily duty
@@ -810,19 +851,23 @@ app.get('/api/my-bookings', (req, res) => {
 
   let myBookings;
   if (isHost || isLeader) {
-    // Host and Team Leaders see: their own bookings + ALL interview bookings!
+    // Host and Team Leaders see: their own bookings + ALL interview & company meeting bookings!
     myBookings = activeBookings.filter(b => {
       const isMine = (b.employeeUserId === userId);
       const isInterview = isInterviewBooking(b);
-      return isMine || isInterview;
+      const isCompanyMeeting = isCompanyMeetingBooking(b);
+      return isMine || isInterview || isCompanyMeeting;
     }).map(b => {
       const isMine = (b.employeeUserId === userId);
       const isInterview = isInterviewBooking(b);
+      const isCompanyMeeting = isCompanyMeetingBooking(b);
       return {
         ...b,
         isMine,
         isInterview,
-        isInterviewDuty: (!isMine && isInterview)
+        isCompanyMeeting,
+        isInterviewDuty: (!isMine && isInterview),
+        isCompanyMeetingDuty: (!isMine && isCompanyMeeting)
       };
     });
   } else {
@@ -830,7 +875,9 @@ app.get('/api/my-bookings', (req, res) => {
       ...b,
       isMine: true,
       isInterview: isInterviewBooking(b),
-      isInterviewDuty: false
+      isCompanyMeeting: isCompanyMeetingBooking(b),
+      isInterviewDuty: false,
+      isCompanyMeetingDuty: false
     }));
   }
 
@@ -851,6 +898,7 @@ app.get('/api/host/bookings', (req, res) => {
     .map(b => {
       const isMine = (userId && b.employeeUserId === userId);
       const isInterview = isInterviewBooking(b);
+      const isCompanyMeeting = isCompanyMeetingBooking(b);
       const canViewDetails = isMine || isHost || isLeader;
 
       if (isInterview && !canViewDetails) {
@@ -861,12 +909,25 @@ app.get('/api/host/bookings', (req, res) => {
           notes: '🔒 สงวนสิทธิ์ข้อมูลเฉพาะกรรมการสัมภาษณ์ (Host & หัวหน้าทีม)',
           eventTitle: 'สัมภาษณ์งาน (คิวส่วนบุคคล)',
           isInterview: true,
+          isCompanyMeeting: false,
+          isMine: false
+        };
+      } else if (isCompanyMeeting && !canViewDetails) {
+        return {
+          ...b,
+          employeeName: 'ฝ่ายบริหาร / บริษัท',
+          employeePicture: 'https://api.dicebear.com/7.x/bottts/svg?seed=company-meeting',
+          notes: '📢 มีการประชุมบริษัทในช่วงเวลานี้ (ปิดรับคิว)',
+          eventTitle: 'ประชุมบริษัท',
+          isInterview: false,
+          isCompanyMeeting: true,
           isMine: false
         };
       }
       return {
         ...b,
         isInterview,
+        isCompanyMeeting,
         isMine
       };
     })
@@ -1389,6 +1450,12 @@ app.put('/api/event-types/:index', (req, res) => {
   if (isNaN(index) || index < 0 || index >= (db.event_types || []).length) {
     return res.status(404).json({ error: 'ไม่พบหมวดหมู่นี้' });
   }
+
+  const currentCategory = db.event_types[index] || '';
+  if (currentCategory.includes('สัมภาษณ์') || currentCategory.includes('ประชุมบริษัท')) {
+    return res.status(400).json({ error: `ไม่อนุญาตให้แก้ไขหมวดหมู่ "${currentCategory}" เนื่องจากเป็นหมวดหมู่ระบบที่จำเป็นต่อการทำงานของโปรแกรม` });
+  }
+
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'กรุณาระบุชื่อหมวดหมู่ Event' });
   }
@@ -1408,6 +1475,11 @@ app.delete('/api/event-types/:index', (req, res) => {
   const index = parseInt(req.params.index);
   if (isNaN(index) || index < 0 || index >= (db.event_types || []).length) {
     return res.status(404).json({ error: 'ไม่พบหมวดหมู่นี้' });
+  }
+
+  const categoryToDelete = db.event_types[index] || '';
+  if (categoryToDelete.includes('สัมภาษณ์') || categoryToDelete.includes('ประชุมบริษัท')) {
+    return res.status(400).json({ error: `ไม่อนุญาตให้ลบหมวดหมู่ "${categoryToDelete}" เนื่องจากเป็นหมวดหมู่ระบบที่จำเป็นต่อการทำงานของโปรแกรม` });
   }
 
   const removed = db.event_types.splice(index, 1);

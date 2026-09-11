@@ -538,14 +538,20 @@ class MeetingQueueApp {
     const currentVal = select.value;
     select.innerHTML = '';
     
+    const isHostOrLeader = (this.currentUser.role === 'host' || this.currentUser.role === 'team_leader');
+
     (this.eventTypes || []).forEach(et => {
+      // General employees cannot select "ประชุมบริษัท"
+      if (!isHostOrLeader && et.includes('ประชุมบริษัท')) {
+        return;
+      }
       const opt = document.createElement('option');
       opt.value = et;
       opt.textContent = et;
       select.appendChild(opt);
     });
 
-    if (currentVal && this.eventTypes.includes(currentVal)) {
+    if (currentVal && Array.from(select.options).some(o => o.value === currentVal)) {
       select.value = currentVal;
     }
   }
@@ -640,6 +646,14 @@ class MeetingQueueApp {
         }
       }
 
+      // Company Meeting indicator & Badge
+      let companyMeetingIndicatorHtml = '';
+      let companyMeetingBadgeHtml = '';
+      if (day.hasCompanyMeeting) {
+        companyMeetingIndicatorHtml = `<span class="text-[9px] sm:text-[10px] font-bold leading-none inline-block text-blue-600" title="มีการประชุมบริษัทในวันนี้ (${day.companyMeetingCount || 1} รายการ)">📢</span>`;
+        companyMeetingBadgeHtml = `<div class="w-full text-center overflow-hidden"><span class="badge-person inline-block bg-blue-100 text-blue-800 border border-blue-200 text-[8px] sm:text-[9px] font-bold px-1 py-0.2 rounded shadow-2xs leading-tight whitespace-nowrap" title="มีการประชุมบริษัทในวันนี้ (${day.companyMeetingCount || 1} ช่วง)">📢 ประชุมบริษัท${day.companyMeetingCount > 1 ? ` (${day.companyMeetingCount})` : ''}</span></div>`;
+      }
+
       // Interview indicator & Badge
       let interviewIndicatorHtml = '';
       let interviewBadgeHtml = '';
@@ -676,12 +690,14 @@ class MeetingQueueApp {
         <div class="flex items-center justify-between w-full px-0.5 leading-none">
           <span class="font-bold text-xs sm:text-sm text-slate-700 leading-none">${day.dayNumber}</span>
           <div class="flex items-center space-x-0.5">
+            ${companyMeetingIndicatorHtml}
             ${interviewIndicatorHtml}
             ${myBookingHtml}
             ${lockIndicatorHtml}
           </div>
         </div>
         <div class="my-0.5 space-y-0.5 w-full overflow-hidden">
+          ${companyMeetingBadgeHtml}
           ${interviewBadgeHtml}
           ${rosterBadgesHtml}
         </div>
@@ -1577,6 +1593,64 @@ class MeetingQueueApp {
               </span>
             `}
           `;
+        } else if (isCompanyMeeting && canViewInterviewDetails) {
+          // Company Meeting viewed by Host or Team Leader
+          const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
+          slotCard.classList.add('bg-blue-50/80', 'border-blue-200');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-full bg-blue-100 border-2 border-white shadow-xs shrink-0 flex items-center justify-center text-blue-600 text-sm font-bold">
+                📢
+              </div>
+              <div>
+                <div class="flex items-center space-x-1.5 flex-wrap">
+                  <span class="font-bold text-xs sm:text-sm text-slate-800">${timeRangeDisplay}</span>
+                  <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท (Host/หัวหน้าทีม)</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                </div>
+                <div class="text-xs font-bold text-slate-800 mt-0.5">
+                  <span class="text-blue-900">📌 ${b.eventTitle || 'การประชุมบริษัท'}</span>
+                  <span class="text-slate-500 font-normal ml-1 text-[11px]">(ผู้ลงคิว: ${b.employeeName})</span>
+                </div>
+                ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
+              </div>
+            </div>
+            ${isHost ? `
+              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
+                ยกเลิก (Host)
+              </button>
+            ` : `
+              <span class="text-[11px] font-medium text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+                👁️ เข้าร่วมประชุม
+              </span>
+            `}
+          `;
+        } else if (isCompanyMeeting && !canViewInterviewDetails) {
+          // Company Meeting viewed by general user
+          const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
+          slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-full bg-blue-50 border-2 border-white shadow-xs shrink-0 flex items-center justify-center text-blue-600 text-sm font-bold">
+                📢
+              </div>
+              <div>
+                <div class="flex items-center space-x-1.5 flex-wrap">
+                  <span class="font-bold text-xs sm:text-sm text-slate-700">${timeRangeDisplay}</span>
+                  <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                </div>
+                <div class="text-xs font-bold text-slate-700 mt-0.5">
+                  <span>📌 การประชุมบริษัท</span>
+                  <span class="text-[11px] text-slate-400 font-normal ml-1">(ช่วงเวลานี้มีประชุมบริษัท)</span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5 italic">📢 มีการประชุมบริษัทในช่วงเวลานี้ (ปิดรับคิว)</div>
+              </div>
+            </div>
+            <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+              จองแล้ว
+            </span>
+          `;
         } else if (isInterview && !canViewInterviewDetails) {
           // Interview viewed by general colleague (PRIVACY PROTECTED)
           slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
@@ -1700,11 +1774,64 @@ class MeetingQueueApp {
     badge.textContent = `${startTime} - ${endTime}`;
     formContainer.classList.remove('hidden');
 
+    const isHostOrLeader = (this.currentUser.role === 'host' || this.currentUser.role === 'team_leader');
+    const multiSlotSection = document.getElementById('bookingMultiSlotSection');
+    const startTimeDisplay = document.getElementById('bookingStartTimeDisplay');
+    const endTimeSelect = document.getElementById('bookingEndTimeSelect');
+
+    if (isHostOrLeader && multiSlotSection && endTimeSelect) {
+      multiSlotSection.classList.remove('hidden');
+      if (startTimeDisplay) startTimeDisplay.value = startTime;
+
+      // Populate valid subsequent end times (1-hour steps up to 17:00)
+      endTimeSelect.innerHTML = '';
+      const startHour = parseInt(startTime.split(':')[0]);
+      for (let h = startHour + 1; h <= 17; h++) {
+        const timeStr = `${h < 10 ? '0' + h : h}:00`;
+        const opt = document.createElement('option');
+        opt.value = timeStr;
+        const durationHours = h - startHour;
+        opt.textContent = `${timeStr} (${durationHours} ชั่วโมง)`;
+        endTimeSelect.appendChild(opt);
+      }
+      endTimeSelect.value = endTime;
+      this.onBookingEndTimeChange();
+    } else if (multiSlotSection) {
+      multiSlotSection.classList.add('hidden');
+    }
+
     // Auto focus on event title
     const input = document.getElementById('bookingEventTitle');
     input.focus();
     formContainer.scrollIntoView({ behavior: 'smooth' });
     lucide.createIcons();
+  }
+
+  onBookingEndTimeChange() {
+    if (!this.selectedSlot) return;
+    const endTimeSelect = document.getElementById('bookingEndTimeSelect');
+    const durationBadge = document.getElementById('bookingDurationBadge');
+    const badge = document.getElementById('selectedSlotBadge');
+    if (!endTimeSelect) return;
+
+    const startH = parseInt(this.selectedSlot.startTime.split(':')[0]);
+    const endH = parseInt(endTimeSelect.value.split(':')[0]);
+    const diff = Math.max(1, endH - startH);
+
+    if (durationBadge) {
+      durationBadge.textContent = `${diff} ชั่วโมง (${diff} ช่วงเวลา)`;
+    }
+    if (badge) {
+      badge.textContent = `${this.selectedSlot.startTime} - ${endTimeSelect.value}`;
+    }
+  }
+
+  onBookingEventTypeChange() {
+    const select = document.getElementById('bookingEventType');
+    const multiNotice = document.getElementById('bookingMultiSlotNotice');
+    if (select && select.value.includes('ประชุมบริษัท') && multiNotice) {
+      multiNotice.innerHTML = '📢 <strong>การประชุมบริษัท:</strong> สามารถขยายเวลาสิ้นสุดเพื่อจองครอบคลุมทุกช่วงเวลาที่ต้องการได้ทันที';
+    }
   }
 
   async submitBooking() {
@@ -1724,10 +1851,17 @@ class MeetingQueueApp {
       return;
     }
 
+    let effectiveEndTime = this.selectedSlot.endTime;
+    const multiSlotSection = document.getElementById('bookingMultiSlotSection');
+    const endTimeSelect = document.getElementById('bookingEndTimeSelect');
+    if (multiSlotSection && !multiSlotSection.classList.contains('hidden') && endTimeSelect && endTimeSelect.value) {
+      effectiveEndTime = endTimeSelect.value;
+    }
+
     const payload = {
       date: this.selectedDate,
       startTime: this.selectedSlot.startTime,
-      endTime: this.selectedSlot.endTime,
+      endTime: effectiveEndTime,
       eventTitle,
       eventType,
       employeeName: this.currentUser.name,
@@ -1842,22 +1976,27 @@ class MeetingQueueApp {
       bookings.forEach(b => {
         const item = document.createElement('div');
         const isInterviewDuty = !!b.isInterviewDuty;
+        const isCompanyMeetingDuty = !!b.isCompanyMeetingDuty;
         const isHost = this.currentUser.role === 'host';
         const d = new Date(b.date + 'T00:00:00');
         const thaiDateStr = `วัน${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
 
-        item.className = `p-4 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isInterviewDuty ? 'bg-purple-50/70 border-purple-200' : 'bg-white border-slate-200'}`;
+        const cardBg = isCompanyMeetingDuty ? 'bg-blue-50/70 border-blue-200' : isInterviewDuty ? 'bg-purple-50/70 border-purple-200' : 'bg-white border-slate-200';
+        item.className = `p-4 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${cardBg}`;
         
-        let tagHtml = `<span class="px-2.5 py-0.5 ${isInterviewDuty ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'} text-[11px] font-bold rounded-lg">${thaiDateStr}</span>`;
+        const dateTagColor = isCompanyMeetingDuty ? 'bg-blue-100 text-blue-800' : isInterviewDuty ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800';
+        let tagHtml = `<span class="px-2.5 py-0.5 ${dateTagColor} text-[11px] font-bold rounded-lg">${thaiDateStr}</span>`;
         if (isInterviewDuty) {
           tagHtml += `<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">🎯 คิวร่วมสัมภาษณ์งาน (กรรมการ/Host)</span>`;
+        } else if (isCompanyMeetingDuty) {
+          tagHtml += `<span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">📢 คิวประชุมบริษัท (Host/หัวหน้าทีม)</span>`;
         }
 
         let actionBtnHtml = '';
-        if (isInterviewDuty && !isHost) {
+        if ((isInterviewDuty || isCompanyMeetingDuty) && !isHost) {
           actionBtnHtml = `
-            <div class="px-3.5 py-2 bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl self-end sm:self-center">
-              👁️ กรรมการร่วม
+            <div class="px-3.5 py-2 ${isCompanyMeetingDuty ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-purple-100 text-purple-700 border-purple-200'} border text-xs font-bold rounded-xl self-end sm:self-center">
+              ${isCompanyMeetingDuty ? '👁️ เข้าร่วมประชุม' : '👁️ กรรมการร่วม'}
             </div>
           `;
         } else {
@@ -2145,7 +2284,15 @@ class MeetingQueueApp {
         const isMine = this.currentUser && b.employeeUserId === this.currentUser.id;
 
         let badgeHtml = '';
-        if (b.isInterview) {
+        if (b.isCompanyMeeting) {
+          if (isMine) {
+            badgeHtml = '<span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท (คิวของคุณ) ⭐</span>';
+          } else if (isHost || this.currentUser.role === 'team_leader') {
+            badgeHtml = '<span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท (Host/หัวหน้าทีม)</span>';
+          } else {
+            badgeHtml = '<span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">📢 ประชุมบริษัท</span>';
+          }
+        } else if (b.isInterview) {
           if (isMine) {
             badgeHtml = '<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">💼 สัมภาษณ์งาน (คิวของคุณ) ⭐</span>';
           } else if (isHost || this.currentUser.role === 'team_leader') {
@@ -2855,20 +3002,39 @@ class MeetingQueueApp {
 
       container.innerHTML = '';
       this.eventTypes.forEach((type, index) => {
+        const isLocked = type.includes('สัมภาษณ์') || type.includes('ประชุมบริษัท');
         const item = document.createElement('div');
         item.className = 'p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-2 text-xs shadow-2xs hover:border-purple-300 transition';
-        item.innerHTML = `
-          <div class="flex items-center space-x-2.5">
-            <span class="w-6 h-6 rounded-lg bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-[10px] shrink-0">${index + 1}</span>
-            <span class="font-semibold text-slate-800" id="eventTypeName_${index}">${type}</span>
-          </div>
-          <div class="flex items-center space-x-1 shrink-0">
+        
+        let actionButtons = '';
+        if (isLocked) {
+          actionButtons = `
+            <span class="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10.5px] font-bold flex items-center gap-1 shrink-0" title="หมวดหมู่พื้นฐานของระบบ (ล็อกเพื่อความเสถียร)">
+              <i data-lucide="lock" class="w-3 h-3 text-amber-600"></i>
+              <span>ระบบล็อก</span>
+            </span>
+          `;
+        } else {
+          actionButtons = `
             <button onclick="app.editEventType(${index})" class="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition" title="แก้ไข">
               <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
             </button>
             <button onclick="app.deleteEventType(${index})" class="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition" title="ลบ">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
             </button>
+          `;
+        }
+
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-6 h-6 rounded-lg ${isLocked ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-700'} font-bold flex items-center justify-center text-[10px] shrink-0">${index + 1}</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-semibold text-slate-800" id="eventTypeName_${index}">${type}</span>
+              ${isLocked ? '<span class="text-[9px] font-bold text-amber-700 bg-amber-100/60 border border-amber-200 px-1.5 py-0.2 rounded-md">หมวดหมู่ระบบ</span>' : ''}
+            </div>
+          </div>
+          <div class="flex items-center space-x-1 shrink-0">
+            ${actionButtons}
           </div>
         `;
         container.appendChild(item);
@@ -2916,6 +3082,11 @@ class MeetingQueueApp {
 
   async editEventType(index) {
     const currentName = this.eventTypes[index];
+    if (currentName && (currentName.includes('สัมภาษณ์') || currentName.includes('ประชุมบริษัท'))) {
+      this.showToast('error', `ไม่อนุญาตให้แก้ไขหมวดหมู่ "${currentName}" ได้ เนื่องจากเป็นหมวดหมู่ระบบ`);
+      return;
+    }
+
     const newName = prompt('แก้ไขชื่อหมวดหมู่ Event:', currentName);
     if (newName === null) return;
     const trimmed = newName.trim();
@@ -2950,6 +3121,11 @@ class MeetingQueueApp {
 
   async deleteEventType(index) {
     const currentName = this.eventTypes[index];
+    if (currentName && (currentName.includes('สัมภาษณ์') || currentName.includes('ประชุมบริษัท'))) {
+      this.showToast('error', `ไม่อนุญาตให้ลบหมวดหมู่ "${currentName}" ได้ เนื่องจากเป็นหมวดหมู่ระบบ`);
+      return;
+    }
+
     if (!confirm(`คุณต้องการลบหมวดหมู่ "${currentName}" ใช่หรือไม่?`)) return;
 
     try {
