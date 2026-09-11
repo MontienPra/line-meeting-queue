@@ -728,20 +728,13 @@ class MeetingQueueApp {
         queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-slate-600 bg-slate-200/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">ปิดคิว</span>`;
       }
 
-      const dayNumColor = isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-700';
-
-      const dayHeaderHtml = isToday ? `
-        <div class="flex items-center space-x-1">
-          <span class="today-num text-xs sm:text-sm leading-none">${day.dayNumber}</span>
-          <span class="today-badge leading-tight">วันนี้</span>
-        </div>
-      ` : `
-        <span class="font-bold text-xs sm:text-sm ${dayNumColor} leading-none">${day.dayNumber}</span>
-      `;
+      const dayNumColor = isToday 
+        ? 'text-emerald-700 font-black' 
+        : (isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-700 font-bold');
 
       cell.innerHTML = `
         <div class="flex items-center justify-between w-full px-0.5 leading-none">
-          ${dayHeaderHtml}
+          <span class="text-xs sm:text-sm ${dayNumColor} leading-none">${day.dayNumber}</span>
           <div class="flex items-center space-x-0.5">
             ${companyMeetingIndicatorHtml}
             ${interviewIndicatorHtml}
