@@ -640,6 +640,14 @@ class MeetingQueueApp {
         }
       }
 
+      // Interview indicator & Badge
+      let interviewIndicatorHtml = '';
+      let interviewBadgeHtml = '';
+      if (day.hasInterview) {
+        interviewIndicatorHtml = `<span class="text-[9px] sm:text-[10px] font-bold leading-none inline-block" title="มีนัดสัมภาษณ์งาน (${day.interviewCount || 1} คิว)">💼</span>`;
+        interviewBadgeHtml = `<div class="w-full text-center overflow-hidden"><span class="badge-person inline-block bg-purple-100 text-purple-800 border border-purple-200 text-[8px] sm:text-[9px] font-bold px-1 py-0.2 rounded shadow-2xs leading-tight whitespace-nowrap" title="มีการนัดสัมภาษณ์งานในวันนี้ (${day.interviewCount || 1} คิว)">💼 สัมภาษณ์${day.interviewCount > 1 ? ` (${day.interviewCount})` : ''}</span></div>`;
+      }
+
       // "My Booking" Star Indicator
       let myBookingHtml = '';
       if (day.hasMyBooking) {
@@ -668,11 +676,13 @@ class MeetingQueueApp {
         <div class="flex items-center justify-between w-full px-0.5 leading-none">
           <span class="font-bold text-xs sm:text-sm text-slate-700 leading-none">${day.dayNumber}</span>
           <div class="flex items-center space-x-0.5">
+            ${interviewIndicatorHtml}
             ${myBookingHtml}
             ${lockIndicatorHtml}
           </div>
         </div>
         <div class="my-0.5 space-y-0.5 w-full overflow-hidden">
+          ${interviewBadgeHtml}
           ${rosterBadgesHtml}
         </div>
         <div class="w-full text-center leading-none mt-auto pt-0.5 overflow-hidden">
@@ -1514,16 +1524,20 @@ class MeetingQueueApp {
       } else if (slot.state === 'booked') {
         const b = slot.booking;
         const isMine = b.isMine;
+        const isInterview = b.isInterview || (b.eventType && b.eventType.includes('สัมภาษณ์'));
+        const isHost = this.currentUser.role === 'host';
+        const isLeader = this.currentUser.role === 'team_leader';
+        const canViewInterviewDetails = isMine || isHost || isLeader;
 
         if (isMine) {
-          slotCard.classList.add('bg-amber-50/80', 'border-amber-300');
+          slotCard.classList.add(isInterview ? 'bg-purple-50/90' : 'bg-amber-50/80', isInterview ? 'border-purple-300' : 'border-amber-300');
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+              <span class="w-2.5 h-2.5 rounded-full ${isInterview ? 'bg-purple-500' : 'bg-amber-500'} shrink-0"></span>
               <div>
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
-                  <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>
+                  <span class="text-[10px] font-bold ${isInterview ? 'text-purple-700 bg-purple-100' : 'text-amber-700 bg-amber-100'} px-1.5 py-0.2 rounded-md">${isInterview ? '💼 สัมภาษณ์งาน (คิวของคุณ) ⭐' : 'คิวของคุณ ⭐'}</span>
                   <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-700 mt-0.5">📌 ${b.eventTitle || 'หัวข้อการประชุม'} <span class="font-normal text-slate-500">(${b.eventType || 'ทั่วไป'})</span></div>
@@ -1533,6 +1547,60 @@ class MeetingQueueApp {
             <button onclick="app.cancelBooking('${b.id}')" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg transition self-end sm:self-center shrink-0">
               ยกเลิกคิวนี้
             </button>
+          `;
+        } else if (isInterview && canViewInterviewDetails) {
+          // Interview viewed by Host or Team Leader
+          slotCard.classList.add('bg-purple-50/80', 'border-purple-200');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <img src="${b.employeePicture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(b.employeeName || 'User')}" class="w-8 h-8 rounded-full bg-purple-100 border-2 border-white shadow-xs shrink-0 object-cover">
+              <div>
+                <div class="flex items-center space-x-1.5 flex-wrap">
+                  <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
+                  <span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🎯 💼 สัมภาษณ์งาน (กรรมการ)</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                </div>
+                <div class="text-xs font-bold text-slate-800 mt-0.5">
+                  <span>${b.employeeName}</span>
+                  <span class="font-medium text-slate-600 ml-1.5">📌 ${b.eventTitle || 'นัดสัมภาษณ์งาน'} <span class="text-[11px] text-purple-600 font-normal">(${b.eventType || 'สัมภาษณ์งาน'})</span></span>
+                </div>
+                ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
+              </div>
+            </div>
+            ${isHost ? `
+              <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
+                ยกเลิก (Host)
+              </button>
+            ` : `
+              <span class="text-[11px] font-medium text-purple-700 bg-purple-100/80 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+                👁️ กรรมการร่วม
+              </span>
+            `}
+          `;
+        } else if (isInterview && !canViewInterviewDetails) {
+          // Interview viewed by general colleague (PRIVACY PROTECTED)
+          slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
+          slotCard.innerHTML = `
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-full bg-purple-100 border-2 border-white shadow-xs shrink-0 flex items-center justify-center text-purple-600 text-sm font-bold">
+                💼
+              </div>
+              <div>
+                <div class="flex items-center space-x-1.5 flex-wrap">
+                  <span class="font-bold text-xs sm:text-sm text-slate-700">${slot.label}</span>
+                  <span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🔒 💼 สัมภาษณ์งาน</span>
+                  <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
+                </div>
+                <div class="text-xs font-bold text-slate-600 mt-0.5">
+                  <span class="text-slate-400 font-normal">[สงวนสิทธิ์ข้อมูลผู้สมัครงาน]</span>
+                  <span class="font-medium text-slate-500 ml-1.5">📌 สัมภาษณ์งาน <span class="text-[11px] text-slate-400 font-normal">(สงวนสิทธิ์ข้อมูล)</span></span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5 italic">🔒 สงวนสิทธิ์ข้อมูลเฉพาะกรรมการสัมภาษณ์ (Host & หัวหน้าทีม)</div>
+              </div>
+            </div>
+            <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg self-end sm:self-center shrink-0">
+              จองแล้ว
+            </span>
           `;
         } else {
           // Booked by other colleague / employee
@@ -1773,27 +1841,48 @@ class MeetingQueueApp {
       list.innerHTML = '';
       bookings.forEach(b => {
         const item = document.createElement('div');
-        item.className = 'p-4 rounded-2xl border border-slate-200 bg-white shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-        
+        const isInterviewDuty = !!b.isInterviewDuty;
+        const isHost = this.currentUser.role === 'host';
         const d = new Date(b.date + 'T00:00:00');
         const thaiDateStr = `วัน${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
 
+        item.className = `p-4 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isInterviewDuty ? 'bg-purple-50/70 border-purple-200' : 'bg-white border-slate-200'}`;
+        
+        let tagHtml = `<span class="px-2.5 py-0.5 ${isInterviewDuty ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'} text-[11px] font-bold rounded-lg">${thaiDateStr}</span>`;
+        if (isInterviewDuty) {
+          tagHtml += `<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">🎯 คิวร่วมสัมภาษณ์งาน (กรรมการ/Host)</span>`;
+        }
+
+        let actionBtnHtml = '';
+        if (isInterviewDuty && !isHost) {
+          actionBtnHtml = `
+            <div class="px-3.5 py-2 bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl self-end sm:self-center">
+              👁️ กรรมการร่วม
+            </div>
+          `;
+        } else {
+          actionBtnHtml = `
+            <button onclick="app.cancelBooking('${b.id}')" class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
+              ยกเลิกคิวนี้
+            </button>
+          `;
+        }
+
         item.innerHTML = `
           <div>
-            <div class="flex items-center space-x-2">
-              <span class="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-lg">${thaiDateStr}</span>
+            <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+              ${tagHtml}
               <span class="text-xs font-bold text-slate-700">${b.startTime} - ${b.endTime} น.</span>
             </div>
             <h4 class="font-bold text-slate-800 text-sm mt-1.5">📌 ${b.eventTitle}</h4>
             <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
               <span class="bg-slate-100 px-2 py-0.5 rounded-md font-medium">${b.eventType}</span>
-              <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName}`}</span>
+              ${b.employeeName && isInterviewDuty ? `<span class="text-purple-700 font-semibold">👤 ผู้สมัคร/ผู้จอง: ${b.employeeName}</span>` : ''}
+              <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName || 'สำนักงานใหญ่'}`}</span>
             </div>
             ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
           </div>
-          <button onclick="app.cancelBooking('${b.id}')" class="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition self-end sm:self-center">
-            ยกเลิกคิวนี้
-          </button>
+          ${actionBtnHtml}
         `;
         list.appendChild(item);
       });
@@ -2055,13 +2144,26 @@ class MeetingQueueApp {
 
         const isMine = this.currentUser && b.employeeUserId === this.currentUser.id;
 
+        let badgeHtml = '';
+        if (b.isInterview) {
+          if (isMine) {
+            badgeHtml = '<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">💼 สัมภาษณ์งาน (คิวของคุณ) ⭐</span>';
+          } else if (isHost || this.currentUser.role === 'team_leader') {
+            badgeHtml = '<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🎯 💼 สัมภาษณ์งาน (กรรมการ)</span>';
+          } else {
+            badgeHtml = '<span class="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">🔒 💼 สัมภาษณ์งาน</span>';
+          }
+        } else {
+          badgeHtml = isMine ? '<span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>' : '<span class="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded-md">👥 เพื่อนร่วมงาน</span>';
+        }
+
         item.innerHTML = `
           <div class="flex items-start space-x-3">
             <img src="${b.employeePicture || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(b.employeeName || 'User')}" class="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-xs shrink-0 object-cover">
             <div>
               <div class="flex items-center space-x-2 flex-wrap">
                 <span class="text-xs font-bold text-slate-800">${b.employeeName}</span>
-                ${isMine ? '<span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded-md">คิวของคุณ ⭐</span>' : '<span class="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded-md">👥 เพื่อนร่วมงาน</span>'}
+                ${badgeHtml}
                 <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
               </div>
               <h4 class="font-bold text-slate-800 text-xs sm:text-sm mt-0.5">📌 ${b.eventTitle || 'นัดหมาย'}</h4>

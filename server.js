@@ -136,6 +136,12 @@ async function initSupabaseSync() {
   if (cloudData && typeof cloudData === 'object') {
     memoryDB = cloudData;
     if (!memoryDB.registered_users) memoryDB.registered_users = [];
+    if (!memoryDB.event_types) {
+      memoryDB.event_types = ['สัมภาษณ์งาน', '1-on-1 ปรึกษางาน', 'ประชุมติดตามงานโครงการ (Project Sync)', 'ตรวจแบบและขออนุมัติงาน', 'นัดคุยงานด่วน', 'อื่นๆ'];
+    } else if (!memoryDB.event_types.includes('สัมภาษณ์งาน')) {
+      memoryDB.event_types.unshift('สัมภาษณ์งาน');
+      saveToSupabase(memoryDB).catch(() => {});
+    }
     const file = getDbFile();
     try {
       const dir = path.dirname(file);
@@ -272,6 +278,13 @@ function isLeaderUser(req, db) {
 
 function isHostOrLeaderUser(req, db) {
   return isHostUser(req, db.settings) || isLeaderUser(req, db);
+}
+
+function isInterviewBooking(b) {
+  if (!b) return false;
+  const type = (b.eventType || '').toLowerCase();
+  const title = (b.eventTitle || '').toLowerCase();
+  return type.includes('สัมภาษณ์') || title.includes('สัมภาษณ์') || type.includes('interview') || title.includes('interview');
 }
 
 // -------------------------------------------------------------
@@ -469,6 +482,12 @@ app.get('/api/calendar/month', (req, res) => {
       }
     });
 
+    // Check active interview bookings for this day
+    const dayActiveBookings = (db.bookings || []).filter(b => b.date === dateStr && b.status !== 'cancelled');
+    const interviewBookings = dayActiveBookings.filter(isInterviewBooking);
+    const hasInterview = interviewBookings.length > 0;
+    const interviewCount = interviewBookings.length;
+
     days.push({
       date: dateStr,
       dayNumber: day,
@@ -480,6 +499,8 @@ app.get('/api/calendar/month', (req, res) => {
       availableSlots: statusInfo.availableSlots,
       bookedSlots: statusInfo.bookedSlots,
       hasMyBooking: statusInfo.hasMyBooking,
+      hasInterview,
+      interviewCount,
       duty: duty ? {
         branchId: duty.branchId,
         branchName: duty.branchName,
@@ -521,6 +542,7 @@ app.get('/api/calendar/day', (req, res) => {
   const { date } = req.query;
   const currentUserId = req.headers['x-user-id'] || req.query.userId;
   const isHost = isHostUser(req, db.settings);
+  const isLeader = isLeaderUser(req, db);
 
   if (!date) {
     return res.status(400).json({ error: 'Missing date parameter (YYYY-MM-DD)' });
@@ -554,22 +576,35 @@ app.get('/api/calendar/day', (req, res) => {
     const bookingMatch = dayBookings.find(b => b.startTime === slot.startTime);
     if (bookingMatch) {
       const isMine = (currentUserId && bookingMatch.employeeUserId === currentUserId);
+      const isInterview = isInterviewBooking(bookingMatch);
+      const canViewDetails = isMine || isHost || isLeader;
+
+      let bookingData = {
+        id: bookingMatch.id,
+        eventTitle: bookingMatch.eventTitle,
+        eventType: bookingMatch.eventType,
+        employeeName: bookingMatch.employeeName,
+        employeePicture: bookingMatch.employeePicture,
+        meetingType: bookingMatch.meetingType,
+        branchName: bookingMatch.branchName || 'สำนักงานใหญ่',
+        notes: canViewDetails ? bookingMatch.notes : (bookingMatch.notes || 'นัดหมายการประชุม'),
+        isMine,
+        isInterview,
+        canCancel: (isMine || isHost) // STRICT PERMISSION: only owner or host
+      };
+
+      if (isInterview && !canViewDetails) {
+        bookingData.employeeName = '[สงวนสิทธิ์ข้อมูลผู้สมัครงาน]';
+        bookingData.employeePicture = 'https://api.dicebear.com/7.x/bottts/svg?seed=interview-private';
+        bookingData.notes = '🔒 สงวนสิทธิ์ข้อมูลเฉพาะกรรมการสัมภาษณ์ (Host & หัวหน้าทีม)';
+        bookingData.eventTitle = 'สัมภาษณ์งาน (คิวส่วนบุคคล)';
+      }
+
       return {
         ...slot,
         state: 'booked',
         canBook: false,
-        booking: {
-          id: bookingMatch.id,
-          eventTitle: bookingMatch.eventTitle,
-          eventType: bookingMatch.eventType,
-          employeeName: bookingMatch.employeeName,
-          employeePicture: bookingMatch.employeePicture,
-          meetingType: bookingMatch.meetingType,
-          branchName: bookingMatch.branchName || 'สำนักงานใหญ่',
-          notes: (isMine || isHost) ? bookingMatch.notes : (bookingMatch.notes || 'นัดหมายการประชุม'),
-          isMine,
-          canCancel: (isMine || isHost) // STRICT PERMISSION: only owner or host
-        }
+        booking: bookingData
       };
     }
 
@@ -760,7 +795,7 @@ app.delete('/api/bookings/:id', (req, res) => {
   });
 });
 
-// 5. Get My Bookings (Employee)
+// 5. Get My Bookings (Employee + Interview Bookings for Host & Team Leaders)
 app.get('/api/my-bookings', (req, res) => {
   const db = readDB();
   const userId = req.headers['x-user-id'] || req.query.userId;
@@ -769,18 +804,72 @@ app.get('/api/my-bookings', (req, res) => {
     return res.status(400).json({ error: 'กรุณาระบุ User ID' });
   }
 
-  const myBookings = (db.bookings || [])
-    .filter(b => b.employeeUserId === userId && b.status !== 'cancelled')
-    .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  const isHost = isHostUser(req, db.settings);
+  const isLeader = isLeaderUser(req, db);
+  const activeBookings = (db.bookings || []).filter(b => b.status !== 'cancelled');
+
+  let myBookings;
+  if (isHost || isLeader) {
+    // Host and Team Leaders see: their own bookings + ALL interview bookings!
+    myBookings = activeBookings.filter(b => {
+      const isMine = (b.employeeUserId === userId);
+      const isInterview = isInterviewBooking(b);
+      return isMine || isInterview;
+    }).map(b => {
+      const isMine = (b.employeeUserId === userId);
+      const isInterview = isInterviewBooking(b);
+      return {
+        ...b,
+        isMine,
+        isInterview,
+        isInterviewDuty: (!isMine && isInterview)
+      };
+    });
+  } else {
+    myBookings = activeBookings.filter(b => b.employeeUserId === userId).map(b => ({
+      ...b,
+      isMine: true,
+      isInterview: isInterviewBooking(b),
+      isInterviewDuty: false
+    }));
+  }
+
+  myBookings.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
 
   res.json({ bookings: myBookings });
 });
 
-// 6. Get All Bookings (Visible to Host, Team Leaders, and Employees)
+// 6. Get All Bookings (Visible to Host, Team Leaders, and Employees with Privacy Protection)
 app.get('/api/host/bookings', (req, res) => {
   const db = readDB();
+  const userId = req.headers['x-user-id'] || req.query.userId;
+  const isHost = isHostUser(req, db.settings);
+  const isLeader = isLeaderUser(req, db);
+
   const activeBookings = (db.bookings || [])
     .filter(b => b.status !== 'cancelled')
+    .map(b => {
+      const isMine = (userId && b.employeeUserId === userId);
+      const isInterview = isInterviewBooking(b);
+      const canViewDetails = isMine || isHost || isLeader;
+
+      if (isInterview && !canViewDetails) {
+        return {
+          ...b,
+          employeeName: '[สงวนสิทธิ์ข้อมูลผู้สมัครงาน]',
+          employeePicture: 'https://api.dicebear.com/7.x/bottts/svg?seed=interview-private',
+          notes: '🔒 สงวนสิทธิ์ข้อมูลเฉพาะกรรมการสัมภาษณ์ (Host & หัวหน้าทีม)',
+          eventTitle: 'สัมภาษณ์งาน (คิวส่วนบุคคล)',
+          isInterview: true,
+          isMine: false
+        };
+      }
+      return {
+        ...b,
+        isInterview,
+        isMine
+      };
+    })
     .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
 
   res.json({
