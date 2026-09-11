@@ -616,9 +616,16 @@ class MeetingQueueApp {
     days.forEach(day => {
       const cell = document.createElement('div');
       
-      // Determine CSS class for 4 colors:
-      // status-green, status-yellow, status-red, status-grey
+      // Determine if date is weekend (Saturday or Sunday)
+      const dObj = new Date(day.date + 'T00:00:00');
+      const isWeekend = day.isWeekend !== undefined ? !!day.isWeekend : (dObj.getDay() === 0 || dObj.getDay() === 6);
+
+      // Determine CSS class:
+      // status-green, status-yellow, status-red, status-grey, status-weekend
       let statusClass = `status-${day.status}`;
+      if (isWeekend && day.status === 'grey') {
+        statusClass = 'status-weekend';
+      }
 
       cell.className = `calendar-cell rounded-xl border p-1 sm:p-1.5 flex flex-col justify-between cursor-pointer ${statusClass}`;
       
@@ -641,15 +648,13 @@ class MeetingQueueApp {
               text = '🏖️ ลา';
             }
           } else if (r.role === 'host') {
-            if (r.isHalfDay && !r.branchName) {
-              text = `⏰ ครึ่งวัน`;
-            } else if (r.branchName) {
+            if (r.branchName) {
               let branchShort = r.branchName;
               if (branchShort === 'สำนักงานใหญ่') branchShort = 'สนง.ใหญ่';
               else if (branchShort === 'WFH / ออนไลน์') branchShort = 'WFH';
               text = `👑 ${branchShort}${r.isHalfDay ? ' (ครึ่งวัน)' : ''}`;
             } else {
-              // Host duty is blank/unspecified - do NOT render badge, keep cell clean
+              // Host duty is blank/unspecified or half-day without branch - do NOT render badge, keep cell clean
               return;
             }
           } else {
@@ -687,9 +692,11 @@ class MeetingQueueApp {
         myBookingHtml = `<span class="text-[9px] sm:text-xs font-bold text-amber-500 leading-none" title="คุณมีคิวจองในวันนี้">⭐</span>`;
       }
 
-      // Lock Indicator (Subtle icon for blocked days - NO bulky overflowing buttons)
+      // Lock Indicator (Subtle icon for blocked days or weekend)
       let lockIndicatorHtml = '';
-      if (day.status === 'grey' || day.isFullDayBlocked) {
+      if (isWeekend && day.status === 'grey') {
+        lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-rose-400 font-bold leading-none" title="วันหยุดเสาร์-อาทิตย์ (ไม่ได้เปิดรับคิว)">⛱️</span>`;
+      } else if (day.status === 'grey' || day.isFullDayBlocked) {
         lockIndicatorHtml = `<span class="text-[8px] sm:text-[9px] text-slate-400 font-bold leading-none" title="ปิดรับคิว (กดเพื่อดูและปลดล็อกได้)">🔒</span>`;
       }
 
@@ -701,13 +708,17 @@ class MeetingQueueApp {
         queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-bold text-amber-800 bg-amber-200/70 px-1 py-0.5 rounded leading-tight whitespace-nowrap">จอง ${day.bookedSlots}/${day.totalSlots}</span>`;
       } else if (day.status === 'red') {
         queueText = `<span class="inline-block text-[8px] sm:text-[9.5px] font-bold text-rose-700 bg-rose-100 px-1 py-0.5 rounded leading-tight whitespace-nowrap">คิวเต็ม</span>`;
+      } else if (isWeekend) {
+        queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-rose-700 bg-rose-100/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">เสาร์-อาทิตย์</span>`;
       } else {
         queueText = `<span class="inline-block text-[7.5px] sm:text-[9px] font-semibold text-slate-600 bg-slate-200/90 px-1 py-0.5 rounded leading-tight whitespace-nowrap">ปิดคิว</span>`;
       }
 
+      const dayNumColor = isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-700';
+
       cell.innerHTML = `
         <div class="flex items-center justify-between w-full px-0.5 leading-none">
-          <span class="font-bold text-xs sm:text-sm text-slate-700 leading-none">${day.dayNumber}</span>
+          <span class="font-bold text-xs sm:text-sm ${dayNumColor} leading-none">${day.dayNumber}</span>
           <div class="flex items-center space-x-0.5">
             ${companyMeetingIndicatorHtml}
             ${interviewIndicatorHtml}
@@ -805,11 +816,24 @@ class MeetingQueueApp {
           hostBranchSelect.appendChild(opt);
         });
 
+        const modalDObj = new Date(dateStr + 'T00:00:00');
+        const isModalDateWeekend = (modalDObj.getDay() === 0 || modalDObj.getDay() === 6);
+        const halfDayRow = document.getElementById('inlineHostHalfDayRow');
+        if (halfDayRow) {
+          if (isModalDateWeekend) {
+            halfDayRow.classList.remove('hidden');
+          } else {
+            halfDayRow.classList.add('hidden');
+          }
+        }
+
         const halfDayCheckbox = document.getElementById('inlineHostHalfDay');
         if (halfDayCheckbox) {
           halfDayCheckbox.onchange = () => {
             if (halfDayCheckbox.checked) {
               this.setInlineHostDutyMode('work');
+              // Automatically reset host branch to 'none' so host status is blank on calendar
+              hostBranchSelect.value = 'none';
             }
           };
         }
@@ -827,7 +851,9 @@ class MeetingQueueApp {
               hostBranchSelect.value = 'none';
             }
           }
-          if (halfDayCheckbox) halfDayCheckbox.checked = !!data.duty.isHalfDay;
+          if (halfDayCheckbox) {
+            halfDayCheckbox.checked = isModalDateWeekend ? !!data.duty.isHalfDay : false;
+          }
           document.getElementById('inlineHostNoteInput').value = (data.duty.note && data.duty.note !== 'สาขาประจำปกติ') ? data.duty.note : '';
         } else {
           this.setInlineHostDutyMode('work');
@@ -2411,7 +2437,8 @@ class MeetingQueueApp {
             <h4 class="font-bold text-slate-800 text-sm mt-1.5">📌 ${b.eventTitle}</h4>
             <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
               <span class="bg-slate-100 px-2 py-0.5 rounded-md font-medium">${b.eventType}</span>
-              ${b.employeeName && isInterviewDuty ? `<span class="text-purple-700 font-semibold">👤 ผู้จอง: ${b.employeeName}</span>` : ''}
+              ${b.employeeName && (isCompanyMeetingDuty || b.isCompanyMeeting || (b.eventType && b.eventType.includes('ประชุม'))) ? `<span class="text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">👤 ผู้ลงคิว: ${b.employeeName}</span>` : ''}
+              ${b.employeeName && isInterviewDuty ? `<span class="text-purple-700 font-semibold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">👤 ผู้จอง: ${b.employeeName}</span>` : ''}
               <span>📍 ${b.meetingType === 'online' ? '💻 คุยออนไลน์' : `🏢 ${b.branchName || 'ที่สาขา'}${b.branchAddress ? ` (${b.branchAddress})` : ''}`}</span>
             </div>
             ${b.notes ? `<p class="text-xs text-slate-500 mt-1 italic">"${b.notes}"</p>` : ''}
@@ -3310,7 +3337,9 @@ class MeetingQueueApp {
       if (document.getElementById('settingWorkEndHour')) {
         document.getElementById('settingWorkEndHour').value = s.workEndHour || 17;
       }
-      document.getElementById('settingWeekendOpen').checked = !!s.weekendOpen;
+      if (document.getElementById('settingWeekendOpen')) {
+        document.getElementById('settingWeekendOpen').checked = !!s.weekendOpen;
+      }
 
       document.getElementById('settingsModal').classList.remove('hidden');
       lucide.createIcons();
@@ -3329,7 +3358,8 @@ class MeetingQueueApp {
     const slotDurationMinutes = document.getElementById('settingSlotDuration').value;
     const workStartHour = document.getElementById('settingWorkStartHour') ? document.getElementById('settingWorkStartHour').value : 8;
     const workEndHour = document.getElementById('settingWorkEndHour') ? document.getElementById('settingWorkEndHour').value : 17;
-    const weekendOpen = document.getElementById('settingWeekendOpen').checked;
+    const weekendOpenEl = document.getElementById('settingWeekendOpen');
+    const weekendOpen = weekendOpenEl ? weekendOpenEl.checked : false;
 
     if (!hostName) {
       this.showToast('error', 'กรุณาระบุชื่อเจ้าของคิว (Host)');

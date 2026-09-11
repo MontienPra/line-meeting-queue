@@ -13,8 +13,27 @@
   <!-- Custom Styles -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
   <link rel="stylesheet" href="css/styles.css?v=2.8">
+  <style>
+    .status-weekend {
+      background-color: #FFF1F2 !important;
+      border-color: #FECDD3 !important;
+      color: #9F1239 !important;
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 8px,
+        rgba(244, 63, 94, 0.08) 8px,
+        rgba(244, 63, 94, 0.08) 16px
+      ) !important;
+    }
+    .status-weekend:hover:not(:disabled) {
+      background-color: #FFE4E6 !important;
+      border-color: #FDA4AF !important;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px -1px rgba(244, 63, 94, 0.15);
+    }
+  </style>
 </head>
 <body class="min-h-screen pb-16">
 
@@ -142,33 +161,40 @@
           </span>
           <span class="text-[11px] text-slate-400">กดที่วันที่เพื่อดูและลงคิว</span>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
           <div class="flex items-center space-x-2 bg-emerald-50/70 border border-emerald-300/80 px-2.5 py-1.5 rounded-xl text-emerald-800">
-            <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-xs"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-xs shrink-0"></span>
             <div class="leading-none">
               <div class="font-semibold text-[11px] sm:text-xs">สีเขียว</div>
               <div class="text-[10px] text-emerald-600">ยังไม่ลงคิว / ว่าง</div>
             </div>
           </div>
           <div class="flex items-center space-x-2 bg-amber-50/70 border border-amber-300/80 px-2.5 py-1.5 rounded-xl text-amber-800">
-            <span class="w-3 h-3 rounded-full bg-amber-400 shadow-xs"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-400 shadow-xs shrink-0"></span>
             <div class="leading-none">
               <div class="font-semibold text-[11px] sm:text-xs">สีเหลือง</div>
               <div class="text-[10px] text-amber-600">ลงคิวแล้ว</div>
             </div>
           </div>
           <div class="flex items-center space-x-2 bg-rose-50/70 border border-rose-300/80 px-2.5 py-1.5 rounded-xl text-rose-800">
-            <span class="w-3 h-3 rounded-full bg-rose-500 shadow-xs"></span>
+            <span class="w-3 h-3 rounded-full bg-rose-500 shadow-xs shrink-0"></span>
             <div class="leading-none">
               <div class="font-semibold text-[11px] sm:text-xs">สีแดง</div>
               <div class="text-[10px] text-rose-600">คิวเต็ม</div>
             </div>
           </div>
           <div class="flex items-center space-x-2 bg-slate-200 border border-slate-400 px-2.5 py-1.5 rounded-xl text-slate-800 shadow-xs">
-            <span class="w-3 h-3 rounded-full bg-slate-500 shadow-xs"></span>
+            <span class="w-3 h-3 rounded-full bg-slate-500 shadow-xs shrink-0"></span>
             <div class="leading-none">
               <div class="font-bold text-[11px] sm:text-xs">สีเทาเข้ม</div>
-              <div class="text-[10px] text-slate-700">ปิดรับคิว / ลาพักร้อน</div>
+              <div class="text-[10px] text-slate-700">ปิดรับคิว / ลา</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 bg-rose-50 border border-rose-300 px-2.5 py-1.5 rounded-xl text-rose-900 shadow-xs col-span-2 sm:col-span-1">
+            <span class="w-3 h-3 rounded-full bg-rose-400 shadow-xs shrink-0"></span>
+            <div class="leading-none">
+              <div class="font-bold text-[11px] sm:text-xs">สีชมพูอ่อน</div>
+              <div class="text-[10px] text-rose-600">เสาร์ - อาทิตย์</div>
             </div>
           </div>
         </div>
@@ -435,8 +461,8 @@
               </select>
             </div>
 
-            <!-- สลับทำงานครึ่งวัน (เปิดเฉพาะช่วงเช้า 08:00 - 12:00 น. รองรับเสาร์ต้น/ปลายเดือน) -->
-            <div id="inlineHostHalfDayRow" class="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
+            <!-- สลับทำงานครึ่งวัน (เปิดเฉพาะช่วงเช้า 08:00 - 12:00 น. แสดงเฉพาะวันเสาร์-อาทิตย์) -->
+            <div id="inlineHostHalfDayRow" class="hidden p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center justify-between">
               <div class="pr-2">
                 <div class="font-bold text-slate-800 text-xs flex items-center space-x-1">
                   <span>⏰ ทำงานครึ่งวัน (08:00 - 12:00 น.)</span>
@@ -600,7 +626,6 @@
         <div>
           <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
             <span>เลือกรอบเวลาที่ต้องการลงคิว</span>
-            <span class="text-[11px] font-normal text-slate-400">รอบละ 60 นาที</span>
           </h4>
 
           <div id="modalSlotsList" class="space-y-2">
@@ -1141,10 +1166,6 @@
           </div>
         </div>
 
-        <div class="flex items-center space-x-2 pt-1">
-          <input type="checkbox" id="settingWeekendOpen" class="rounded text-amber-600 focus:ring-amber-500">
-          <label for="settingWeekendOpen" class="font-bold text-slate-700 cursor-pointer">เปิดรับคิววันเสาร์ - อาทิตย์ (ทั้งวัน)</label>
-        </div>
 
         <div class="pt-2">
           <button onclick="app.saveSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5">
@@ -1259,7 +1280,7 @@
   <div id="toastContainer" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 pointer-events-none space-y-2"></div>
 
   <!-- App Script with Cache Busting -->
-  <script src="js/app.js?v=3.4"></script>
+  <script src="js/app.js?v=3.5"></script>
   <script>
     // Initialize icons
     lucide.createIcons();

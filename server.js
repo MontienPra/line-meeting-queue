@@ -460,8 +460,8 @@ app.get('/api/calendar/month', (req, res) => {
     // Collect roster (Host + Team Leaders) for this day
     const roster = [];
 
-    // 1. Host Duty
-    if (duty && (duty.isLeave || duty.branchName || duty.isHalfDay)) {
+    // 1. Host Duty (Show badge on calendar only if on leave or has branch assigned)
+    if (duty && (duty.isLeave || duty.branchName)) {
       const hostShortName = (db.settings.hostName || 'มณเทียร').replace(/^(คุณ|\(.*\))/g, '').trim().split(' ')[0] || 'มณเทียร';
       roster.push({
         id: 'host',
@@ -509,9 +509,11 @@ app.get('/api/calendar/month', (req, res) => {
     const hasCompanyMeeting = companyMeetingBookings.length > 0;
     const companyMeetingCount = companyMeetingBookings.length;
 
+    const isDayWeekend = (new Date(dateStr + 'T00:00:00').getDay() === 0 || new Date(dateStr + 'T00:00:00').getDay() === 6);
     days.push({
       date: dateStr,
       dayNumber: day,
+      isWeekend: isDayWeekend,
       status: statusInfo.status, // 'green' | 'yellow' | 'red' | 'grey'
       statusText: statusInfo.statusText,
       canBook: statusInfo.canBook,
@@ -527,6 +529,7 @@ app.get('/api/calendar/month', (req, res) => {
       duty: duty ? {
         branchId: duty.branchId,
         branchName: duty.branchName,
+        isHalfDay: !!duty.isHalfDay,
         isLeave: duty.isLeave,
         leaveType: duty.leaveType,
         note: duty.note
@@ -1092,7 +1095,7 @@ app.post('/api/host/duty', (req, res) => {
   db.daily_duties = db.daily_duties || {};
 
   // If user requests to clear / reset duty (กลับเป็นวันว่างปกติ ไม่ระบุสถานที่)
-  if (isClear || branchId === 'none' || branchId === 'clear') {
+  if (!isHalfDay && (isClear || branchId === 'none' || branchId === 'clear')) {
     delete db.daily_duties[date];
     writeDB(db);
     return res.json({
@@ -1106,9 +1109,12 @@ app.post('/api/host/duty', (req, res) => {
     db.blocked_slots = (db.blocked_slots || []).filter(b => !(b.date === date && b.isFullDay));
   }
 
+  const effectiveBranchId = (branchId === 'none' || branchId === 'clear') ? null : (branchId || null);
+  const effectiveBranchName = effectiveBranchId ? (branchName || null) : null;
+
   db.daily_duties[date] = {
-    branchId: branchId || null,
-    branchName: branchName || null,
+    branchId: effectiveBranchId,
+    branchName: effectiveBranchName,
     isWorkingDay: true,
     isHalfDay: !!isHalfDay,
     isLeave: isHalfDay ? false : !!isLeave,
