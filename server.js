@@ -853,7 +853,7 @@ app.delete('/api/bookings/:id', (req, res) => {
 app.patch('/api/bookings/:id', (req, res) => {
   const db = readDB();
   const bookingId = req.params.id;
-  const { startTime, endTime } = req.body;
+  const { startTime, endTime, ranges } = req.body;
   const requestingUserId = req.headers['x-user-id'] || req.body.userId || req.query.userId;
   const isHost = isHostUser(req, db.settings);
 
@@ -871,6 +871,62 @@ app.patch('/api/bookings/:id', (req, res) => {
     return res.status(403).json({
       error: 'ความปลอดภัย: คุณไม่มีสิทธิ์แก้ไขคิวของพนักงานคนอื่น!',
       code: 'PERMISSION_DENIED'
+    });
+  }
+
+  // Handle ranges array if provided (e.g. from multi-slot trim modal)
+  if (Array.isArray(ranges)) {
+    if (ranges.length === 0) {
+      booking.status = 'cancelled';
+      booking.cancelledAt = new Date().toISOString();
+      booking.cancelledBy = isHost ? 'host' : requestingUserId;
+      writeDB(db);
+      return res.json({
+        success: true,
+        message: 'ยกเลิกคิวการนัดหมายเรียบร้อยแล้ว',
+        cancelledBookingId: bookingId
+      });
+    }
+
+    // Validate each range
+    for (const r of ranges) {
+      if (!r.startTime || !r.endTime || !/^\d{2}:\d{2}$/.test(r.startTime) || !/^\d{2}:\d{2}$/.test(r.endTime)) {
+        return res.status(400).json({ error: 'รูปแบบเวลาในรายการช่วงเวลาไม่ถูกต้อง' });
+      }
+      if (r.startTime >= r.endTime) {
+        return res.status(400).json({ error: 'เวลาเริ่มต้นต้องน้อยกว่าเวลาสิ้นสุดในทุกช่วง' });
+      }
+    }
+
+    // First range updates existing booking
+    booking.startTime = ranges[0].startTime;
+    booking.endTime = ranges[0].endTime;
+    booking.updatedAt = new Date().toISOString();
+    booking.updatedBy = isHost ? 'host' : requestingUserId;
+
+    // Additional split ranges (if cut in middle) create cloned bookings
+    const createdBookings = [];
+    for (let i = 1; i < ranges.length; i++) {
+      const splitBooking = {
+        ...booking,
+        id: 'bk-' + Date.now() + '-' + Math.floor(Math.random() * 1000) + '-' + i,
+        startTime: ranges[i].startTime,
+        endTime: ranges[i].endTime,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: isHost ? 'host' : requestingUserId
+      };
+      db.bookings.push(splitBooking);
+      createdBookings.push(splitBooking);
+    }
+
+    writeDB(db);
+
+    return res.json({
+      success: true,
+      message: 'ปรับช่วงเวลาการนัดหมายเรียบร้อยแล้ว',
+      booking,
+      createdBookings
     });
   }
 

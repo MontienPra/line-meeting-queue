@@ -72,6 +72,13 @@ class MeetingQueueApp {
     return `${h < 10 ? '0' + h : h}:${min < 10 ? '0' + min : min}`;
   }
 
+  formatThaiDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
+  }
+
   async init() {
     try {
       this.setupDropdown();
@@ -1601,7 +1608,7 @@ class MeetingQueueApp {
         const actionBtnHtml = (isMine || effectiveIsHost) ? (
           (slot.coveredSlots > 1) ? `
             <div class="flex items-center space-x-1.5 self-end sm:self-center shrink-0">
-              <button onclick="app.promptTrimBooking('${b.id}', '${slot.startTime}', '${slot.endTime}', ${slot.coveredSlots})" class="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[11px] font-bold rounded-lg transition" title="ปรับลดช่วงเวลาที่จองลง">
+              <button onclick="app.openTrimModal('${b.id}', '${slot.startTime}', '${slot.endTime}', ${slot.coveredSlots})" class="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[11px] font-bold rounded-lg transition" title="ปรับลดช่วงเวลาที่จองลง">
                 ✂️ ปรับลดเวลา
               </button>
               <button onclick="app.cancelBooking('${b.id}', '${slot.startTime}', '${slot.endTime}', ${slot.coveredSlots})" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold rounded-lg transition">
@@ -2073,36 +2080,238 @@ class MeetingQueueApp {
     }
   }
 
-  async promptTrimBooking(bookingId, startTime, endTime, coveredSlots) {
+  // -------------------------------------------------------------
+  // Multi-Slot Trim Modal (Interactive Slot Selection)
+  // -------------------------------------------------------------
+  openTrimModal(bookingId, startTime, endTime, coveredSlots) {
     if (!bookingId) return;
-    const startMin = this.timeToMinutes(startTime);
-    const endMin = this.timeToMinutes(endTime);
-    const stepMin = this.selectedSlotDurationMinutes || Math.round((endMin - startMin) / (coveredSlots || 2)) || 30;
 
-    if (endMin - startMin <= stepMin) {
-      this.showToast('info', 'คิวนี้มีความยาวเพียง 1 ช่วงเวลาแล้ว หากต้องการยกเลิกให้กดปุ่มยกเลิกทั้งคิว');
+    // Find all sub-slots for this booking from currentDayData
+    let bookingSlots = [];
+    let bTitle = '';
+    let bDate = this.selectedDate || '';
+
+    if (this.currentDayData && Array.isArray(this.currentDayData.slots)) {
+      this.currentDayData.slots.forEach(s => {
+        if (s.state === 'booked' && s.booking && s.booking.id === bookingId) {
+          bookingSlots.push({
+            startTime: s.startTime,
+            endTime: s.endTime,
+            label: `${s.startTime} - ${s.endTime} น.`
+          });
+          if (!bTitle && s.booking.eventTitle) bTitle = s.booking.eventTitle;
+        }
+      });
+    }
+
+    // Fallback if not found in currentDayData
+    if (bookingSlots.length === 0) {
+      const startMin = this.timeToMinutes(startTime);
+      const endMin = this.timeToMinutes(endTime);
+      const stepMin = this.selectedSlotDurationMinutes || Math.round((endMin - startMin) / (coveredSlots || 2)) || 30;
+      for (let m = startMin; m < endMin; m += stepMin) {
+        const s1 = this.minutesToTime(m);
+        const s2 = this.minutesToTime(Math.min(m + stepMin, endMin));
+        bookingSlots.push({
+          startTime: s1,
+          endTime: s2,
+          label: `${s1} - ${s2} น.`
+        });
+      }
+    }
+
+    this.trimModalState = {
+      bookingId,
+      eventTitle: bTitle || 'การประชุม',
+      date: bDate,
+      originalStartTime: startTime,
+      originalEndTime: endTime,
+      slots: bookingSlots.map((s, idx) => ({
+        id: idx,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        label: s.label,
+        keep: true
+      }))
+    };
+
+    // Populate modal elements
+    const titleEl = document.getElementById('trimModalTitle');
+    const dateEl = document.getElementById('trimModalDate');
+    const rangeEl = document.getElementById('trimModalOriginalRange');
+
+    if (titleEl) titleEl.innerHTML = `📌 <strong class="text-slate-800">${this.trimModalState.eventTitle}</strong>`;
+    if (dateEl) dateEl.textContent = this.formatThaiDate(this.trimModalState.date);
+    if (rangeEl) rangeEl.textContent = `${startTime} - ${endTime} น. (${this.trimModalState.slots.length} ช่วงเวลา)`;
+
+    this.renderTrimModalSlots();
+
+    const modal = document.getElementById('trimBookingModal');
+    if (modal) modal.classList.remove('hidden');
+    lucide.createIcons();
+  }
+
+  closeTrimModal() {
+    const modal = document.getElementById('trimBookingModal');
+    if (modal) modal.classList.add('hidden');
+    this.trimModalState = null;
+  }
+
+  toggleTrimSlot(slotId) {
+    if (!this.trimModalState || !this.trimModalState.slots) return;
+    const target = this.trimModalState.slots.find(s => s.id === slotId);
+    if (target) {
+      target.keep = !target.keep;
+      this.renderTrimModalSlots();
+    }
+  }
+
+  renderTrimModalSlots() {
+    if (!this.trimModalState) return;
+    const listEl = document.getElementById('trimModalSlotsList');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    this.trimModalState.slots.forEach(s => {
+      const card = document.createElement('div');
+      card.className = `p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${
+        s.keep 
+          ? 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs' 
+          : 'bg-rose-50/70 border-rose-200 opacity-80'
+      }`;
+
+      card.innerHTML = `
+        <div class="flex items-center space-x-3 cursor-pointer select-none grow" onclick="app.toggleTrimSlot(${s.id})">
+          <input type="checkbox" ${s.keep ? 'checked' : ''} onclick="event.stopPropagation(); app.toggleTrimSlot(${s.id})" class="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs font-bold ${s.keep ? 'text-slate-800' : 'text-rose-600 line-through'}">${s.label}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                s.keep 
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                  : 'bg-rose-100 text-rose-700 border border-rose-200'
+              }">
+                ${s.keep ? '✅ คงไว้' : '🗑️ จะถูกลบ'}
+              </span>
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="app.toggleTrimSlot(${s.id})" class="px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 ${
+          s.keep 
+            ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200' 
+            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+        }">
+          ${s.keep ? '🗑️ ลบช่วงนี้' : '↩️ กู้คืน'}
+        </button>
+      `;
+
+      listEl.appendChild(card);
+    });
+
+    this.updateTrimModalSummary();
+  }
+
+  calculateKeptRanges(keptSlots) {
+    if (!keptSlots || keptSlots.length === 0) return [];
+    const sorted = [...keptSlots].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const ranges = [];
+    for (const s of sorted) {
+      const last = ranges[ranges.length - 1];
+      if (last && last.endTime === s.startTime) {
+        last.endTime = s.endTime;
+      } else {
+        ranges.push({ startTime: s.startTime, endTime: s.endTime });
+      }
+    }
+    return ranges;
+  }
+
+  updateTrimModalSummary() {
+    if (!this.trimModalState) return;
+    const keptSlots = this.trimModalState.slots.filter(s => s.keep);
+    const summaryEl = document.getElementById('trimModalSummary');
+    const confirmBtn = document.getElementById('trimModalConfirmBtn');
+    if (!summaryEl || !confirmBtn) return;
+
+    if (keptSlots.length === 0) {
+      summaryEl.innerHTML = '<span class="text-rose-600 font-bold">⚠️ ยกเลิกคิวทั้งหมด (ลบทุกช่วงเวลา)</span>';
+      confirmBtn.className = 'w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5';
+      confirmBtn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i><span>ยืนยันยกเลิกคิวทั้งหมด</span>';
+    } else if (keptSlots.length === this.trimModalState.slots.length) {
+      summaryEl.innerHTML = '<span class="text-slate-500 font-medium">ยังไม่ได้นำช่วงเวลาใดออก</span>';
+      confirmBtn.className = 'w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition flex items-center justify-center space-x-1.5';
+      confirmBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span>คงเวลาเดิม (ปิดหน้าต่าง)</span>';
+    } else {
+      const ranges = this.calculateKeptRanges(keptSlots);
+      const rangeLabels = ranges.map(r => `${r.startTime} - ${r.endTime} น.`).join(' และ ');
+      summaryEl.innerHTML = `<strong class="text-emerald-700 text-xs">${rangeLabels}</strong> <span class="text-slate-500 font-normal">(${keptSlots.length} ช่วงเวลา)</span>`;
+      confirmBtn.className = 'w-full py-2.5 btn-line font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5';
+      confirmBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i><span>ยืนยันบันทึกการปรับเวลา</span>';
+    }
+    lucide.createIcons();
+  }
+
+  async confirmTrimBooking() {
+    if (!this.trimModalState) return;
+    const { bookingId } = this.trimModalState;
+    const keptSlots = this.trimModalState.slots.filter(s => s.keep);
+
+    // If all slots deleted -> Cancel entire booking
+    if (keptSlots.length === 0) {
+      if (!confirm('คุณได้เลือกนำทุกช่วงเวลาออก คุณต้องการยกเลิกคิวนี้ทั้งหมดใช่หรือไม่?')) {
+        return;
+      }
+      this.closeTrimModal();
+      return this.cancelBooking(bookingId);
+    }
+
+    // If unchanged
+    if (keptSlots.length === this.trimModalState.slots.length) {
+      this.closeTrimModal();
       return;
     }
 
-    const optStart = this.minutesToTime(startMin + stepMin);
-    const optEnd = this.minutesToTime(endMin - stepMin);
-
-    const promptText = 
-      `✂️ ปรับลดช่วงเวลาสำหรับคิวปัจจุบัน (${startTime} - ${endTime} น.):\n\n` +
-      `พิมพ์ 1: ยกเลิกช่วงแรกออก (เวลาใหม่จะเป็น ${optStart} - ${endTime} น.)\n` +
-      `พิมพ์ 2: ยกเลิกช่วงท้ายออก (เวลาใหม่จะเป็น ${startTime} - ${optEnd} น.)\n\n` +
-      `ระบุตัวเลข (1 หรือ 2):`;
-
-    const choice = prompt(promptText, '1');
-    if (!choice) return; // User cancelled
-
-    if (choice.trim() === '1') {
-      await this.trimBooking(bookingId, optStart, endTime);
-    } else if (choice.trim() === '2') {
-      await this.trimBooking(bookingId, startTime, optEnd);
-    } else {
-      this.showToast('error', 'กรุณาระบุหมายเลข 1 หรือ 2 เท่านั้น');
+    const ranges = this.calculateKeptRanges(keptSlots);
+    const confirmBtn = document.getElementById('trimModalConfirmBtn');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span>กำลังบันทึก...</span>';
     }
+
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': this.currentUser.id,
+          'x-role': this.currentUser.role
+        },
+        body: JSON.stringify({ ranges })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ไม่สามารถปรับลดเวลาได้');
+
+      const rangeLabels = ranges.map(r => `${r.startTime} - ${r.endTime} น.`).join(' และ ');
+      this.showToast('success', `ปรับลดเวลาคิวเป็น ${rangeLabels} เรียบร้อยแล้ว`);
+      this.closeTrimModal();
+
+      if (this.selectedDate) {
+        await this.openDayModal(this.selectedDate);
+      }
+      await this.loadMonthCalendar();
+      this.loadMyBookings();
+      this.loadHostBookings();
+    } catch (err) {
+      this.showToast('error', err.message);
+    } finally {
+      if (confirmBtn) confirmBtn.disabled = false;
+    }
+  }
+
+  // Backward compatibility alias
+  promptTrimBooking(bookingId, startTime, endTime, coveredSlots) {
+    this.openTrimModal(bookingId, startTime, endTime, coveredSlots);
   }
 
   async trimBooking(bookingId, newStartTime, newEndTime) {

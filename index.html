@@ -1200,11 +1200,66 @@
     </div>
   </div>
 
+  <!-- ============================================================= -->
+  <!-- MODAL: Trim / Manage Multi-Slot Booking Modal                 -->
+  <!-- ============================================================= -->
+  <div id="trimBookingModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 modal-backdrop">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl p-5 modal-content-animated space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-slate-800 text-base flex items-center space-x-2">
+          <span>✂️ ปรับลดช่วงเวลาที่จอง</span>
+        </h3>
+        <button onclick="app.closeTrimModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Booking Info Summary Header -->
+      <div class="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+        <div class="text-xs font-bold text-slate-800 flex items-center gap-1.5" id="trimModalTitle">
+          📌 ชื่องาน
+        </div>
+        <div class="text-[11px] text-slate-500 flex items-center gap-3">
+          <span>📅 วันที่: <strong class="text-slate-700" id="trimModalDate">-</strong></span>
+          <span>⏱️ ช่วงเวลาเดิม: <strong class="text-indigo-600 font-bold" id="trimModalOriginalRange">-</strong></span>
+        </div>
+      </div>
+
+      <!-- Instruction Guidance -->
+      <div class="text-xs text-slate-600 bg-amber-50/80 border border-amber-200 p-2.5 rounded-xl flex items-start gap-2">
+        <span class="text-amber-600 text-sm leading-none mt-0.5">💡</span>
+        <span>แตะที่ช่องเวลาหรือกด <strong>[🗑️ ลบช่วงนี้]</strong> เพื่อนำช่วงเวลาที่ไม่ต้องการออก ระบบจะคำนวณเวลาใหม่อัตโนมัติในครั้งเดียว</span>
+      </div>
+
+      <!-- List of Sub-slots with checkboxes and delete action -->
+      <div class="space-y-2 max-h-60 overflow-y-auto pr-1" id="trimModalSlotsList">
+        <!-- Rendered dynamically by JS -->
+      </div>
+
+      <!-- Summary of Result -->
+      <div class="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs">
+        <span class="font-medium text-emerald-900">สรุปเวลาคงเหลือ:</span>
+        <span class="font-bold text-emerald-700" id="trimModalSummary">กำลังคำนวณ...</span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button type="button" onclick="app.closeTrimModal()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition">
+          ยกเลิก
+        </button>
+        <button type="button" id="trimModalConfirmBtn" onclick="app.confirmTrimBooking()" class="w-full py-2.5 btn-line font-bold rounded-xl text-xs shadow-xs transition flex items-center justify-center space-x-1.5">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>บันทึกการปรับเวลา</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50 pointer-events-none space-y-2"></div>
 
   <!-- App Script with Cache Busting -->
-  <script src="js/app.js?v=3.3"></script>
+  <script src="js/app.js?v=3.4"></script>
   <script>
     // Initialize icons
     lucide.createIcons();
