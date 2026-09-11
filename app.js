@@ -1511,6 +1511,9 @@ class MeetingQueueApp {
       return;
     }
 
+    const effectiveIsHost = !!(isHost || (this.currentUser && this.currentUser.role === 'host'));
+    const isLeader = !!(this.currentUser && this.currentUser.role === 'team_leader');
+
     slots.forEach(slot => {
       const slotCard = document.createElement('div');
       slotCard.className = 'p-3 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-2';
@@ -1526,7 +1529,7 @@ class MeetingQueueApp {
             </div>
           </div>
           <div class="flex items-center space-x-2 self-end sm:self-center">
-            ${isHost ? `
+            ${effectiveIsHost ? `
               <button onclick="app.quickBlockSlot('${slot.startTime}', '${slot.endTime}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-300 text-xs font-semibold rounded-lg transition flex items-center space-x-1" title="บล็อกช่วงเวลานี้">
                 <i data-lucide="slash" class="w-3 h-3 text-rose-500"></i>
                 <span>บล็อกรอบนี้</span>
@@ -1538,22 +1541,25 @@ class MeetingQueueApp {
           </div>
         `;
       } else if (slot.state === 'booked') {
-        const b = slot.booking;
-        const isMine = b.isMine;
-        const isInterview = b.isInterview || (b.eventType && b.eventType.includes('สัมภาษณ์'));
-        const isHost = this.currentUser.role === 'host';
-        const isLeader = this.currentUser.role === 'team_leader';
-        const canViewInterviewDetails = isMine || isHost || isLeader;
+        const b = slot.booking || {};
+        const isMine = !!b.isMine;
+        const isInterview = !!(b.isInterview || (b.eventType && b.eventType.includes('สัมภาษณ์')));
+        const isCompanyMeeting = !!(b.isCompanyMeeting || (b.eventType && b.eventType.includes('ประชุมบริษัท')));
+        const canViewDetails = isMine || effectiveIsHost || isLeader;
 
         if (isMine) {
-          slotCard.classList.add(isInterview ? 'bg-purple-50/90' : 'bg-amber-50/80', isInterview ? 'border-purple-300' : 'border-amber-300');
+          slotCard.classList.add(isInterview ? 'bg-purple-50/90' : isCompanyMeeting ? 'bg-blue-50/90' : 'bg-amber-50/80', isInterview ? 'border-purple-300' : isCompanyMeeting ? 'border-blue-300' : 'border-amber-300');
+          const myBadgeText = isInterview ? '💼 สัมภาษณ์งาน (คิวของคุณ) ⭐' : isCompanyMeeting ? '📢 ประชุมบริษัท (คิวของคุณ) ⭐' : 'คิวของคุณ ⭐';
+          const myBadgeColor = isInterview ? 'text-purple-700 bg-purple-100' : isCompanyMeeting ? 'text-blue-700 bg-blue-100' : 'text-amber-700 bg-amber-100';
+          const myDotColor = isInterview ? 'bg-purple-500' : isCompanyMeeting ? 'bg-blue-500' : 'bg-amber-500';
+
           slotCard.innerHTML = `
             <div class="flex items-center space-x-2.5">
-              <span class="w-2.5 h-2.5 rounded-full ${isInterview ? 'bg-purple-500' : 'bg-amber-500'} shrink-0"></span>
+              <span class="w-2.5 h-2.5 rounded-full ${myDotColor} shrink-0"></span>
               <div>
                 <div class="flex items-center space-x-1.5 flex-wrap">
                   <span class="font-bold text-xs sm:text-sm text-slate-800">${slot.label}</span>
-                  <span class="text-[10px] font-bold ${isInterview ? 'text-purple-700 bg-purple-100' : 'text-amber-700 bg-amber-100'} px-1.5 py-0.2 rounded-md">${isInterview ? '💼 สัมภาษณ์งาน (คิวของคุณ) ⭐' : 'คิวของคุณ ⭐'}</span>
+                  <span class="text-[10px] font-bold ${myBadgeColor} px-1.5 py-0.2 rounded-md">${myBadgeText}</span>
                   <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-700 mt-0.5">📌 ${b.eventTitle || 'หัวข้อการประชุม'} <span class="font-normal text-slate-500">(${b.eventType || 'ทั่วไป'})</span></div>
@@ -1564,7 +1570,7 @@ class MeetingQueueApp {
               ยกเลิกคิวนี้
             </button>
           `;
-        } else if (isInterview && canViewInterviewDetails) {
+        } else if (isInterview && canViewDetails) {
           // Interview viewed by Host or Team Leader
           slotCard.classList.add('bg-purple-50/80', 'border-purple-200');
           slotCard.innerHTML = `
@@ -1583,7 +1589,7 @@ class MeetingQueueApp {
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${isHost ? `
+            ${effectiveIsHost ? `
               <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
                 ยกเลิก (Host)
               </button>
@@ -1593,7 +1599,7 @@ class MeetingQueueApp {
               </span>
             `}
           `;
-        } else if (isCompanyMeeting && canViewInterviewDetails) {
+        } else if (isCompanyMeeting && canViewDetails) {
           // Company Meeting viewed by Host or Team Leader
           const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
           slotCard.classList.add('bg-blue-50/80', 'border-blue-200');
@@ -1615,7 +1621,7 @@ class MeetingQueueApp {
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-600 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${isHost ? `
+            ${effectiveIsHost ? `
               <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
                 ยกเลิก (Host)
               </button>
@@ -1625,8 +1631,8 @@ class MeetingQueueApp {
               </span>
             `}
           `;
-        } else if (isCompanyMeeting && !canViewInterviewDetails) {
-          // Company Meeting viewed by general user
+        } else if (isCompanyMeeting && !canViewDetails) {
+          // Company Meeting viewed by general user (MASKED)
           const timeRangeDisplay = (b.bookingStartTime && b.bookingEndTime) ? `${b.bookingStartTime} - ${b.bookingEndTime} น.` : slot.label;
           slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
           slotCard.innerHTML = `
@@ -1651,7 +1657,7 @@ class MeetingQueueApp {
               จองแล้ว
             </span>
           `;
-        } else if (isInterview && !canViewInterviewDetails) {
+        } else if (isInterview && !canViewDetails) {
           // Interview viewed by general colleague (PRIVACY PROTECTED)
           slotCard.classList.add('bg-slate-50/90', 'border-slate-200');
           slotCard.innerHTML = `
@@ -1689,13 +1695,13 @@ class MeetingQueueApp {
                   <span class="text-[10px] font-medium text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">${b.meetingType === 'online' ? '💻 ออนไลน์' : '🏢 ' + (b.branchName || 'ที่สาขา')}</span>
                 </div>
                 <div class="text-xs font-bold text-slate-800 mt-0.5">
-                  <span>${b.employeeName}</span>
+                  <span>${b.employeeName || 'เพื่อนร่วมงาน'}</span>
                   <span class="font-medium text-slate-600 ml-1.5">📌 ${b.eventTitle || 'นัดหมาย'} <span class="text-[11px] text-slate-500 font-normal">(${b.eventType || 'ทั่วไป'})</span></span>
                 </div>
                 ${b.notes && b.notes !== 'รายละเอียดการประชุม' ? `<div class="text-[11px] text-slate-500 mt-0.5 italic">"${b.notes}"</div>` : ''}
               </div>
             </div>
-            ${isHost ? `
+            ${effectiveIsHost ? `
               <button onclick="app.cancelBooking('${b.id}')" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-[11px] font-semibold rounded-lg self-end sm:self-center shrink-0">
                 ยกเลิก (Host)
               </button>
@@ -1718,7 +1724,7 @@ class MeetingQueueApp {
               <div class="text-[11px] text-slate-500 mt-0.5">⛔ ${slot.reason}</div>
             </div>
           </div>
-          ${isHost && slot.blockId ? `
+          ${effectiveIsHost && slot.blockId ? `
             <button onclick="app.unblockSlot('${slot.blockId}')" class="px-2.5 py-1 bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-300 hover:border-emerald-300 text-[11px] font-semibold rounded-lg transition self-end sm:self-center flex items-center space-x-1">
               <i data-lucide="unlock" class="w-3 h-3 text-emerald-600"></i>
               <span>ยกเลิกบล็อก (เปิดรับคิว)</span>
