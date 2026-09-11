@@ -627,7 +627,16 @@ class MeetingQueueApp {
         statusClass = 'status-weekend';
       }
 
+      // Check if day is today (วันปัจจุบัน)
+      const now = new Date();
+      const pad = n => n < 10 ? '0' + n : '' + n;
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      const isToday = (day.date === todayStr);
+
       cell.className = `calendar-cell rounded-xl border p-1 sm:p-1.5 flex flex-col justify-between cursor-pointer ${statusClass}`;
+      if (isToday) {
+        cell.classList.add('cell-today');
+      }
       
       if (day.status === 'grey') {
         cell.classList.add('cursor-not-allowed');
@@ -721,9 +730,18 @@ class MeetingQueueApp {
 
       const dayNumColor = isWeekend ? 'text-rose-600 font-extrabold' : 'text-slate-700';
 
+      const dayHeaderHtml = isToday ? `
+        <div class="flex items-center space-x-1">
+          <span class="today-num text-xs sm:text-sm leading-none">${day.dayNumber}</span>
+          <span class="today-badge leading-tight">วันนี้</span>
+        </div>
+      ` : `
+        <span class="font-bold text-xs sm:text-sm ${dayNumColor} leading-none">${day.dayNumber}</span>
+      `;
+
       cell.innerHTML = `
         <div class="flex items-center justify-between w-full px-0.5 leading-none">
-          <span class="font-bold text-xs sm:text-sm ${dayNumColor} leading-none">${day.dayNumber}</span>
+          ${dayHeaderHtml}
           <div class="flex items-center space-x-0.5">
             ${companyMeetingIndicatorHtml}
             ${interviewIndicatorHtml}
@@ -1350,8 +1368,8 @@ class MeetingQueueApp {
       payload.leaveType = leaveType;
     } else {
       const branchId = document.getElementById('inlineHostBranchSelect').value;
-      // ถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดทำงานครึ่งวัน (และไม่ได้เลือกสาขาอื่น) ให้ล้างสถานะกลับเป็นวันเสาร์/อาทิตย์ตามเดิมอัตโนมัติ
-      if (isDateWeekend && (branchId === 'none' || branchId === 'clear' || !branchId)) {
+      // ถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดทำงานครึ่งวัน (isHalfDay: false) ให้ล้างสถานะกลับเป็นวันหยุดตามเดิมอัตโนมัติ
+      if (isDateWeekend && !isHalfDay) {
         payload.isClear = true;
         payload.branchId = 'none';
       } else if (branchId === 'none' || branchId === 'clear') {

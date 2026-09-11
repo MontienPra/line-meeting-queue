@@ -131,6 +131,11 @@ async function saveToSupabase(data) {
 
 // Initial Sync from Supabase on startup
 async function initSupabaseSync() {
+  if (process.env.NODE_ENV === 'test' || process.env.DISABLE_SUPABASE === 'true') {
+    console.log('🛡️ [Safety Guard] Supabase Sync disabled for test environment');
+    memoryDB = readLocalDB();
+    return;
+  }
   console.log('🔄 Connecting to Supabase Cloud Database...');
   const cloudData = await fetchFromSupabase();
   if (cloudData && typeof cloudData === 'object') {
@@ -211,12 +216,31 @@ function writeDB(data) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+    // Safety Snapshot: Backup existing file before overwrite
+    if (fs.existsSync(file)) {
+      try {
+        const backupDir = path.join(dir, 'backups');
+        if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFile = path.join(backupDir, `database_backup_${timestamp}.json`);
+        fs.copyFileSync(file, backupFile);
+        
+        // Keep latest 20 backups to manage disk usage
+        const files = fs.readdirSync(backupDir).filter(f => f.startsWith('database_backup_')).sort();
+        if (files.length > 20) {
+          fs.unlinkSync(path.join(backupDir, files[0]));
+        }
+      } catch (bkErr) {}
+    }
     fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
   } catch (err) {
     console.error('Error writing database.json:', err);
   }
 
-  saveToSupabase(data).catch(() => {});
+  // Strictly prevent test environments from pushing to Supabase Cloud
+  if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_SUPABASE !== 'true') {
+    saveToSupabase(data).catch(() => {});
+  }
   return true;
 }
 
@@ -1103,12 +1127,12 @@ app.post('/api/host/duty', (req, res) => {
   db.daily_duties = db.daily_duties || {};
 
   // If user requests to clear / reset duty (กลับเป็นวันว่างปกติ ไม่ระบุสถานที่)
-  // หรือถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดรับคิวทำงานครึ่งวัน (isHalfDay: false) โดยไม่เลือกสาขาอื่น ให้กลับเป็นวันหยุดเสาร์/อาทิตย์ตามเดิมอัตโนมัติ
+  // หรือถ้าเป็นวันเสาร์-อาทิตย์ แล้วสลับปิดรับคิวทำงานครึ่งวัน (isHalfDay: false) ให้กลับเป็นวันหยุดเสาร์/อาทิตย์ตามเดิมอัตโนมัติ
   const dateObj = new Date(date + 'T00:00:00');
   const isDateWeekend = (dateObj.getDay() === 0 || dateObj.getDay() === 6);
-  const isWeekendHalfDayClosed = (isDateWeekend && !isHalfDay && !isLeave && (!branchId || branchId === 'none' || branchId === 'clear'));
+  const isWeekendHalfDayClosed = (isDateWeekend && !isHalfDay && !isLeave);
 
-  if (!isHalfDay && (isClear || branchId === 'none' || branchId === 'clear' || isWeekendHalfDayClosed)) {
+  if (isClear || branchId === 'none' || branchId === 'clear' || isWeekendHalfDayClosed) {
     delete db.daily_duties[date];
     writeDB(db);
     const dayName = (dateObj.getDay() === 6 ? 'เสาร์' : 'อาทิตย์');

@@ -1,0 +1,328 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+:root {
+  --line-green: #06C755;
+  --line-green-dark: #05a847;
+}
+
+body {
+  font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  background-color: #F8FAFC;
+  color: #1E293B;
+}
+
+/* LINE Theme button */
+.btn-line {
+  background-color: var(--line-green);
+  color: white;
+  transition: all 0.2s ease;
+}
+.btn-line:hover {
+  background-color: var(--line-green-dark);
+}
+
+/* Status Cards & Calendar Cells */
+.calendar-cell {
+  min-height: 60px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 3px 2px;
+  transition: all 0.15s ease-in-out;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .calendar-cell {
+    min-height: 80px;
+    padding: 6px 5px;
+  }
+}
+
+/* Today Highlight Styling (แสดงวันปัจจุบันบนปฏิทิน) */
+.cell-today {
+  outline: 2.5px solid #059669 !important;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35), 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+  position: relative;
+  z-index: 2;
+}
+
+.today-badge {
+  background: linear-gradient(135deg, #059669, #0d9488);
+  color: #ffffff !important;
+  border-radius: 9999px;
+  padding: 1px 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  line-height: 1.1;
+  display: inline-block;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.today-num {
+  background: #059669;
+  color: #ffffff !important;
+  border-radius: 9999px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.4);
+}
+
+@media (min-width: 640px) {
+  .today-num {
+    width: 24px;
+    height: 24px;
+  }
+  .today-badge {
+    font-size: 9px;
+    padding: 1.5px 6px;
+  }
+}
+
+.status-green {
+  background-color: #ECFDF5;
+  border-color: #34D399;
+  color: #065F46;
+}
+.status-green:hover:not(:disabled) {
+  background-color: #D1FAE5;
+  border-color: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
+}
+
+.status-yellow {
+  background-color: #FEFCE8;
+  border-color: #FBBF24;
+  color: #854D0E;
+}
+.status-yellow:hover:not(:disabled) {
+  background-color: #FEF9C3;
+  border-color: #D97706;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.2);
+}
+
+.status-red {
+  background-color: #FEF2F2;
+  border-color: #F87171;
+  color: #991B1B;
+}
+.status-red:hover:not(:disabled) {
+  background-color: #FEE2E2;
+  border-color: #DC2626;
+  transform: translateY(-2px);
+}
+
+.status-grey {
+  background-color: #E2E8F0;
+  border-color: #94A3B8;
+  color: #334155;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(100, 116, 139, 0.08),
+    rgba(100, 116, 139, 0.08) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  cursor: not-allowed !important;
+}
+.status-grey:hover:not(:disabled) {
+  background-color: #CBD5E1;
+  border-color: #64748B;
+}
+
+.status-weekend {
+  background-color: #FFF1F2 !important;
+  border-color: #FECDD3 !important;
+  color: #9F1239 !important;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 8px,
+    rgba(244, 63, 94, 0.08) 8px,
+    rgba(244, 63, 94, 0.08) 16px
+  ) !important;
+}
+.status-weekend:hover:not(:disabled) {
+  background-color: #FFE4E6 !important;
+  border-color: #FDA4AF !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(244, 63, 94, 0.15);
+}
+
+/* Person Signature Color Badges (ไม่ใช้สีเขียว สีเหลือง สีแดง เพื่อไม่ให้ชนกับสีช่องปฏิทิน) */
+.badge-person {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 8px;
+  line-height: 1.15;
+  padding: 1px 2.5px;
+  border-radius: 4px;
+  margin-bottom: 1.5px;
+  border-width: 1px;
+  font-weight: 600;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+@media (min-width: 640px) {
+  .badge-person {
+    font-size: 9.5px;
+    line-height: 1.2;
+    padding: 1.5px 4px;
+    border-radius: 5px;
+    margin-bottom: 2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+}
+
+/* เมื่ออยู่บนช่องปฏิทิน ใช้พื้นหลังสีขาวการ์ด + ขอบแถบสีด้านซ้าย ชัดเจนและไม่กลืนกับสีช่อง */
+.calendar-cell .badge-person {
+  background-color: #FFFFFF;
+  border-left-width: 2.5px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+/* 1. Host: Deep Indigo / Royal Navy (สีน้ำเงินครามเข้ม) */
+.badge-person-indigo,
+.badge-person-host,
+.badge-person-amber {
+  background-color: #EEF2FF;
+  color: #312E81;
+  border-color: #C7D2FE;
+}
+.calendar-cell .badge-person-indigo,
+.calendar-cell .badge-person-host,
+.calendar-cell .badge-person-amber {
+  background-color: #FFFFFF;
+  color: #312E81;
+  border-color: #E0E7FF;
+  border-left-color: #4F46E5;
+}
+
+/* 2. Leader 1: Sky Blue (สีฟ้าสดใส) */
+.badge-person-sky {
+  background-color: #E0F2FE;
+  color: #0369A1;
+  border-color: #BAE6FD;
+}
+.calendar-cell .badge-person-sky {
+  background-color: #FFFFFF;
+  color: #0369A1;
+  border-color: #E0F2FE;
+  border-left-color: #0284C7;
+}
+
+/* 3. Leader 2: Royal Purple (สีม่วงสดใส) */
+.badge-person-purple {
+  background-color: #F3E8FF;
+  color: #581C87;
+  border-color: #DDD6FE;
+}
+.calendar-cell .badge-person-purple {
+  background-color: #FFFFFF;
+  color: #581C87;
+  border-color: #F3E8FF;
+  border-left-color: #7C3AED;
+}
+
+/* 4. Leader 3: Cyan / Ocean (สีฟ้าครามไซแอน) */
+.badge-person-cyan,
+.badge-person-emerald {
+  background-color: #ECFEFF;
+  color: #155E75;
+  border-color: #A5F3FC;
+}
+.calendar-cell .badge-person-cyan,
+.calendar-cell .badge-person-emerald {
+  background-color: #FFFFFF;
+  color: #155E75;
+  border-color: #CFFAFE;
+  border-left-color: #0891B2;
+}
+
+/* 5. Leader 4: Fuchsia / Magenta (สีชมพูม่วงฟูเชีย) */
+.badge-person-fuchsia,
+.badge-person-rose {
+  background-color: #FDF4FF;
+  color: #701A75;
+  border-color: #F5D0FE;
+}
+.calendar-cell .badge-person-fuchsia,
+.calendar-cell .badge-person-rose {
+  background-color: #FFFFFF;
+  color: #701A75;
+  border-color: #FCE7F3;
+  border-left-color: #C026D3;
+}
+
+/* 6. Leader 5: Slate / Dark Charcoal (สีชาร์โคลสเลท) */
+.badge-person-slate {
+  background-color: #F1F5F9;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+.calendar-cell .badge-person-slate {
+  background-color: #FFFFFF;
+  color: #0F172A;
+  border-color: #E2E8F0;
+  border-left-color: #475569;
+}
+
+/* Quick Unlock Button on Calendar Cell (ซ่อนบนหน้าตารางเพื่อป้องกันข้อความล้น ให้กดปลดล็อกใน Modal ได้สะดวกรวดเร็วแทน) */
+.btn-cell-unlock {
+  display: none !important;
+}
+
+/* Modal and Bottom Sheet Animations */
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content-animated {
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Scrollbar polish */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
