@@ -653,23 +653,29 @@ app.get('/api/calendar/day', (req, res) => {
 
   const fullDayBlock = (duty && duty.isHalfDay) ? null : (db.blocked_slots || []).find(b => b.date === date && b.isFullDay);
 
-  // Host Duty fallback (ใช้ defaultBranchId ของ Host หากไม่มี duty เฉพาะวัน)
+  // Host Duty fallback (ใช้ defaultBranchId ของ Host หากไม่มี duty เฉพาะวัน สำหรับวันธรรมดา)
+  const dateObj = new Date(date + 'T00:00:00');
+  const dayOfWeek = dateObj.getDay();
+  const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
   const hostDefaultBranch = (db.branches || []).find(b => b.id === db.settings.defaultBranchId) || (db.branches && db.branches[0]);
   const hostDutyResolved = duty ? {
     branchId: duty.branchId,
     branchName: duty.branchName,
-    isLeave: duty.isLeave,
-    leaveType: duty.leaveType,
+    isHalfDay: !!duty.isHalfDay,
+    isLeave: !!duty.isLeave,
+    leaveType: duty.leaveType || null,
     note: duty.note || '',
     isDefault: false
-  } : {
+  } : (isWeekend ? null : {
     branchId: hostDefaultBranch ? hostDefaultBranch.id : null,
     branchName: hostDefaultBranch ? hostDefaultBranch.name : 'สำนักงานใหญ่',
     isLeave: false,
+    isHalfDay: false,
     leaveType: null,
     note: '',
     isDefault: true
-  };
+  });
 
   // Team Leaders Daily Duties for this day (ใช้ defaultBranchId ของแต่ละท่านหากไม่มี duty เฉพาะวัน)
   const leaders = db.team_leaders || [];
@@ -709,6 +715,7 @@ app.get('/api/calendar/day', (req, res) => {
     duty: hostDutyResolved,
     slots,
     isHost,
+    isWeekend,
     isFullDayBlocked: !!fullDayBlock,
     fullDayBlockId: fullDayBlock ? fullDayBlock.id : null,
     teamDuties

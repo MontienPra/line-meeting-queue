@@ -834,14 +834,24 @@ class MeetingQueueApp {
 
         const halfDayCheckbox = document.getElementById('inlineHostHalfDay');
         if (halfDayCheckbox) {
-          halfDayCheckbox.onchange = () => {
-            if (halfDayCheckbox.checked) {
-              this.setInlineHostDutyMode('work');
-              // Automatically reset host branch to 'none' so host status is blank on calendar
-              hostBranchSelect.value = 'none';
-            } else {
-              // When unchecked on weekend, ensure branch is none so it cleanly reverts to closed weekend
-              hostBranchSelect.value = 'none';
+          halfDayCheckbox.onchange = async () => {
+            halfDayCheckbox.disabled = true;
+            try {
+              if (halfDayCheckbox.checked) {
+                this.setInlineHostDutyMode('work');
+                // Automatically reset host branch to 'none' so host status is blank on calendar
+                hostBranchSelect.value = 'none';
+              } else {
+                // When unchecked on weekend, ensure branch is none so it cleanly reverts to closed weekend
+                hostBranchSelect.value = 'none';
+              }
+              // ถ้าเป็นวันเสาร์-อาทิตย์ ให้บันทึกการเปิด/ปิดทำงานครึ่งวันและสลับสถานะให้อัตโนมัติทันที
+              if (isModalDateWeekend) {
+                await this.saveInlineHostDuty();
+              }
+            } finally {
+              const el = document.getElementById('inlineHostHalfDay');
+              if (el) el.disabled = false;
             }
           };
         }
@@ -909,9 +919,16 @@ class MeetingQueueApp {
         }
       } else {
         dutyBanner.classList.remove('hidden');
-        dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-50 border-slate-200 text-slate-700';
-        dutyTitle.textContent = '📍 สถานะ: เข้าปฏิบัติงานตามปกติ';
-        dutyDesc.textContent = 'เปิดรับคิวการประชุมตามปกติ';
+        if (isModalDateWeekend) {
+          const weekendDayTitle = modalDObj.getDay() === 0 ? 'อาทิตย์' : 'เสาร์';
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-100 border-slate-200 text-slate-600';
+          dutyTitle.textContent = `⛱️ วันหยุดสุดสัปดาห์ (วัน${weekendDayTitle})`;
+          dutyDesc.textContent = `วัน${weekendDayTitle} (ปิดรับคิว)`;
+        } else {
+          dutyBanner.className = 'p-3.5 rounded-2xl border flex items-start space-x-3 bg-slate-50 border-slate-200 text-slate-700';
+          dutyTitle.textContent = '📍 สถานะ: เข้าปฏิบัติงานตามปกติ';
+          dutyDesc.textContent = 'เปิดรับคิวการประชุมตามปกติ';
+        }
       }
 
       // 3. Setup Team Leader Inline Box & Leaders List
